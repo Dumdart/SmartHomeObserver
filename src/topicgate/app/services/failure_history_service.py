@@ -131,6 +131,10 @@ class FailureHistoryService:
             )
         )
 
+    def delete(self, failure_id: UUID) -> None:
+        """Permanently delete one failure episode from history."""
+        self._failure_repository.delete(failure_id)
+
     @staticmethod
     def _ordered(failures) -> list[ExpectationFailure]:
         return sorted(

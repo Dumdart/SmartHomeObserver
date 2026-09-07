@@ -131,3 +131,11 @@ def test_failure_history_maps_bounded_identity_and_cursor() -> None:
     assert result.items[0].target == "devices/status"
     assert result.items[0].evidence_truncated is True
 
+
+def test_delete_failure_history_delegates_to_history_service() -> None:
+    service, _ = _service([])
+    failure_id = uuid4()
+
+    service.delete_failure_history(failure_id)
+
+    service._failure_history.delete.assert_called_once_with(failure_id)

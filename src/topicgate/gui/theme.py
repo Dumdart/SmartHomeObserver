@@ -66,6 +66,7 @@ QPushButton[primary="true"]:pressed { background: #2b4259; border-color: #2b4259
 QPushButton[primary="true"]:disabled { color: #737b85; background: #e5e7eb; border-color: #c8ced6; }
 QPushButton[danger="true"] { color: #a53030; border-color: #d7a4a4; }
 QPushButton[danger="true"]:hover { color: #8f2525; background: #fff5f5; border-color: #c77d7d; }
+QPushButton[danger="true"]:disabled { color: #a66a6a; background: #fffafa; border-color: #e0b4b4; }
 QMenuBar, QMenu, QDockWidget { background: #ffffff; }
 QMenuBar { border-bottom: 1px solid #c8ced6; }
 QToolButton#brokerConnectionButton { background: transparent; border: 0; border-radius: 3px; padding: 0 6px; }

@@ -40,6 +40,10 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.config.mqtt_config import MqttConfig
+from topicgate.app.models.expectation_health_report import (
+    FailureHistoryItem,
+    FailureHistoryResult,
+)
 from topicgate.app.topicgate_runtime import TopicGateRuntime
 from topicgate.core.models.mqtt_message import MqttMessage
 from topicgate.core.models.current_topic import CurrentTopic
@@ -48,6 +52,7 @@ from topicgate.core.models.topic_message import TopicMessage
 from topicgate.core.models.broker_profile import BrokerProfile
 from topicgate.core.models.broker_summary import BrokerSummary
 from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import FreshnessCondition
 from topicgate.core.models.health.condition import NumericRangeCondition
 from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.condition_kind import ConditionKind
@@ -668,6 +673,55 @@ def test_desktop_persists_snapshot_preferences_and_focuses_search() -> None:
     application.processEvents()
 
 
+def test_health_history_deletes_selected_episode_after_confirmation() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    runtime = runtime_for(repository)
+    failure_id = uuid4()
+    history_item = FailureHistoryItem(
+        failure_id=failure_id,
+        expectation_id=uuid4(),
+        broker_id=runtime.active_broker.id,
+        target="devices/status",
+        first_failed_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+        recovered_at=datetime.now(timezone.utc),
+        occurrence_count=1,
+        expected_revision=1,
+        last_healthy_at=None,
+        failure_code="MISMATCH",
+        evidence_summary="unexpected value",
+        evidence_truncated=False,
+        evidence_limitations=(),
+    )
+    health_query = MagicMock()
+    health_query.query_failure_history.return_value = FailureHistoryResult(
+        (history_item,), None, 1
+    )
+    view_model = MainViewModel(runtime, health_query_service=health_query)
+    inspector = HealthInspector(view_model)
+    delete_button = inspector.findChild(
+        QPushButton, "deleteHealthHistoryButton"
+    )
+    assert delete_button.property("danger") is True
+    assert not delete_button.isEnabled()
+    inspector.show_history()
+    table = inspector.findChild(QTableWidget, "healthHistoryTable")
+    table.selectRow(0)
+    assert delete_button.isEnabled()
+
+    with patch(
+        "topicgate.gui.components.health_inspector.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        delete_button.click()
+
+    health_query.delete_failure_history.assert_called_once_with(failure_id)
+    assert table.rowCount() == 0
+    inspector.deleteLater()
+    application.processEvents()
+
+
 def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
@@ -739,6 +793,20 @@ def test_topic_expectation_editor_configures_numeric_and_existence_conditions(
     editor.findChild(QPushButton, "saveExpectationButton").click()
     created = management.create_expectation.call_args.args[0]
     assert created.condition == TopicExistsCondition()
+
+    editor.findChild(QLineEdit, "expectationName").setText("Recent topic")
+    condition_kind.setCurrentIndex(
+        condition_kind.findData(ConditionKind.FRESH_WITHIN)
+    )
+    expected = editor.findChild(QComboBox, "expectationExpectedValue")
+    expected.setEditText("60")
+
+    assert expected_editor.currentWidget() is expected
+    assert not expected_editor.isHidden()
+    assert encoding.isHidden()
+    editor.findChild(QPushButton, "saveExpectationButton").click()
+    created = management.create_expectation.call_args.args[0]
+    assert created.condition == FreshnessCondition(60)
     window.close()
     application.processEvents()
 
@@ -756,7 +824,10 @@ def test_broker_expectation_editor_excludes_topic_only_conditions() -> None:
         "broker",
     )
     selector = editor.findChild(QComboBox, "expectationConditionKind")
-    kinds = {ConditionKind(selector.itemData(index)) for index in range(selector.count())}
+    kinds = {
+        ConditionKind(selector.itemData(index))
+        for index in range(selector.count())
+    }
 
     assert kinds == {
         ConditionKind.EQUAL,

@@ -255,10 +255,16 @@ class FreshnessCondition(Condition):
     max_age_seconds: float
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.max_age_seconds) or self.max_age_seconds < 0:
+        if isinstance(self.max_age_seconds, bool):
             raise ValueError(
                 "Freshness maximum age must be a finite non-negative value."
             )
+        max_age_seconds = float(self.max_age_seconds)
+        if not math.isfinite(max_age_seconds) or max_age_seconds < 0:
+            raise ValueError(
+                "Freshness maximum age must be a finite non-negative value."
+            )
+        object.__setattr__(self, "max_age_seconds", max_age_seconds)
 
     def evaluate(self, context: ConditionEvaluationContext) -> ConditionResult:
         if not context.topic_exists or context.received_at is None:

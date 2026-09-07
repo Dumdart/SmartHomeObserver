@@ -58,6 +58,13 @@ class ExpectationFailureRepository:
             session.merge(ExpectationFailureMapper.to_row(failure))
         return failure
 
+    def delete(self, failure_id: UUID) -> None:
+        with self._db.transaction() as session:
+            row = session.get(ExpectationFailureRow, failure_id)
+            if row is None:
+                raise KeyError(f"Unknown expectation failure: {failure_id}")
+            session.delete(row)
+
     @staticmethod
     def _session(transaction: object) -> Session:
         if not isinstance(transaction, Session):

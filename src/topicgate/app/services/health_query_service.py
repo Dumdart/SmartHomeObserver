@@ -124,6 +124,10 @@ class HealthQueryService:
         items = tuple(self._history_item(item) for item in page.items)
         return FailureHistoryResult(items, page.next_cursor, len(items))
 
+    def delete_failure_history(self, failure_id: UUID) -> None:
+        """Permanently delete one failure episode."""
+        self._failure_history.delete(failure_id)
+
     def _finding(
         self,
         evaluation: ExpectationEvaluation,

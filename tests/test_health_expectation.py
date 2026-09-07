@@ -60,6 +60,16 @@ def test_numeric_range_reports_unusable_payloads_as_problems(actual) -> None:
     assert "not numeric" in result.evidence_summary
 
 
+@pytest.mark.parametrize("actual", [b"9.99", "20.01"])
+def test_numeric_range_reports_values_outside_the_bounds(actual) -> None:
+    result = NumericRangeCondition(Decimal("10"), Decimal("20")).handle_condition(
+        actual
+    )
+
+    assert result.status is HealthStatus.PROBLEM
+    assert result.failure_code == "NUMERIC_RANGE_CONDITION_FAILED"
+
+
 @pytest.mark.parametrize(
     ("minimum", "maximum"),
     [
@@ -111,7 +121,7 @@ def test_freshness_reports_missing_and_stale_topics_as_problems() -> None:
     assert stale.failure_code == "FRESHNESS_CONDITION_FAILED"
 
 
-@pytest.mark.parametrize("max_age", [-1, float("nan"), float("inf")])
+@pytest.mark.parametrize("max_age", [-1, float("nan"), float("inf"), True])
 def test_freshness_rejects_invalid_maximum_age(max_age) -> None:
     with pytest.raises(ValueError):
         FreshnessCondition(max_age)

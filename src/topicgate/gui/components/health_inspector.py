@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTableWidget,
@@ -114,10 +115,16 @@ class HealthInspector(WorkspacePane):
         self._query_button = QPushButton("Apply")
         self._query_button.setObjectName("queryHealthHistoryButton")
         self._query_button.clicked.connect(self.query_history)
+        self._delete_history_button = QPushButton("Delete selected")
+        self._delete_history_button.setObjectName("deleteHealthHistoryButton")
+        self._delete_history_button.setProperty("danger", True)
+        self._delete_history_button.setEnabled(False)
+        self._delete_history_button.clicked.connect(self._delete_selected_history)
         for widget in (
             self._history_topic,
             self._history_status,
             self._query_button,
+            self._delete_history_button,
         ):
             filters.addWidget(widget)
         layout.addLayout(filters)
@@ -159,11 +166,17 @@ class HealthInspector(WorkspacePane):
         for column in (1, 2, 3, 4):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         self._history_table.cellDoubleClicked.connect(self._activate_history_topic)
+        self._history_table.itemSelectionChanged.connect(
+            self._history_selection_changed
+        )
         layout.addWidget(self._history_table, 1)
+        history_actions = QHBoxLayout()
         self._more_button = QPushButton("Load more")
         self._more_button.setObjectName("loadMoreHealthHistoryButton")
         self._more_button.clicked.connect(self.load_more_history)
-        layout.addWidget(self._more_button, 0, Qt.AlignmentFlag.AlignRight)
+        history_actions.addStretch(1)
+        history_actions.addWidget(self._more_button)
+        layout.addLayout(history_actions)
         return page
 
     def refresh_health(self) -> None:
@@ -261,7 +274,7 @@ class HealthInspector(WorkspacePane):
             )
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
-                cell.setData(Qt.ItemDataRole.UserRole, item.target)
+                cell.setData(Qt.ItemDataRole.UserRole, item)
                 self._history_table.setItem(row, column, cell)
         self._history_message.setText(
             "No failure episodes match these filters."
@@ -269,6 +282,7 @@ class HealthInspector(WorkspacePane):
             else f"Showing {history.returned_count} failure episode(s)."
         )
         self._more_button.setVisible(history.next_cursor is not None)
+        self._history_selection_changed()
 
     def _finding_row(self, item, evaluated_at) -> tuple:
         return (
@@ -298,9 +312,42 @@ class HealthInspector(WorkspacePane):
 
     def _activate_history_topic(self, row: int, _column: int) -> None:
         item = self._history_table.item(row, 0)
-        topic = str(item.data(Qt.ItemDataRole.UserRole) or "") if item else ""
+        history_item = item.data(Qt.ItemDataRole.UserRole) if item else None
+        topic = "" if history_item is None else history_item.target
         if topic and topic != "broker":
             self.topic_requested.emit(topic)
+
+    def _history_selection_changed(self) -> None:
+        self._delete_history_button.setEnabled(
+            self._history_table.currentRow() >= 0
+        )
+
+    def _delete_selected_history(self) -> None:
+        row = self._history_table.currentRow()
+        cell = self._history_table.item(row, 0) if row >= 0 else None
+        item = cell.data(Qt.ItemDataRole.UserRole) if cell is not None else None
+        if item is None:
+            return
+        consequence = (
+            " This episode is active; if the check is still failing, a new "
+            "episode may be created on the next evaluation."
+            if item.recovered_at is None
+            else ""
+        )
+        answer = QMessageBox.question(
+            self,
+            "Delete failure episode?",
+            "Permanently delete the selected failure episode from history?"
+            f"{consequence}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._view_model.delete_health_history(item.failure_id)
+        except Exception as error:
+            QMessageBox.warning(self, "Unable to delete failure episode", str(error))
 
     def _query_history(self, cursor: int | None) -> None:
         try:

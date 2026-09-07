@@ -83,9 +83,15 @@ def test_health_repositories_scope_topics_and_hydrate_after_restart(tmp_path) ->
     assert ExpectationStateRepository(reopened).get(first.expectation_id) is not None
     assert ExpectationFailureRepository(reopened).get(failure_id) is not None
 
+    ExpectationFailureRepository(reopened).delete(failure_id)
+    assert ExpectationFailureRepository(reopened).get(failure_id) is None
+    assert (
+        ExpectationStateRepository(reopened).get(first.expectation_id).active_failure_id
+        is None
+    )
+
     reopened_expectations.delete(first.expectation_id)
     assert ExpectationStateRepository(reopened).get(first.expectation_id) is None
-    assert ExpectationFailureRepository(reopened).get(failure_id) is None
     reopened.dispose()
 
 

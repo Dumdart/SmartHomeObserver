@@ -282,6 +282,50 @@ def test_unsubscribed_topic_state_condition_remains_unknown(tmp_path) -> None:
     database.dispose()
 
 
+def test_freshness_monitor_persists_failure_and_recovery(tmp_path) -> None:
+    database = DatabaseContext(f"sqlite:///{tmp_path / 'freshness-transition.db'}")
+    broker_id = uuid4()
+    item = replace(_expectation(broker_id), condition=FreshnessCondition(60))
+    message = TopicMessage(
+        broker_id=broker_id,
+        topic="devices/status",
+        payload=b"online",
+        qos=0,
+        retain=False,
+        received_at=NOW - timedelta(seconds=61),
+        payload_size=6,
+        message_count=1,
+        observation_id=uuid4(),
+    )
+    current_topics = [CurrentTopic(message, ObservationStatus.LIVE)]
+    evaluator = _service(
+        database,
+        item,
+        _metadata(),
+        current_topics,
+    )
+    states = ExpectationStateRepository(database)
+    failures = ExpectationFailureRepository(database)
+
+    evaluator.evaluate_broker(broker_id, evaluated_at=NOW)
+    failed_state = states.get(item.expectation_id)
+    assert failed_state.current_status is HealthStatus.PROBLEM
+    assert failed_state.active_failure_id is not None
+
+    current_topics[0] = CurrentTopic(
+        replace(message, received_at=NOW),
+        ObservationStatus.LIVE,
+    )
+    evaluator.evaluate_broker(broker_id, evaluated_at=NOW)
+
+    recovered_state = states.get(item.expectation_id)
+    assert recovered_state.current_status is HealthStatus.HEALTHY
+    assert recovered_state.active_failure_id is None
+    failure = failures.get(failed_state.active_failure_id)
+    assert failure.recovered_at.replace(tzinfo=timezone.utc) == NOW
+    database.dispose()
+
+
 def test_observation_failures_are_separate_from_topic_findings(tmp_path) -> None:
     database = DatabaseContext(f"sqlite:///{tmp_path / 'transport.db'}")
     broker_id = uuid4()

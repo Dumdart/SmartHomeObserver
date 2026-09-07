@@ -261,6 +261,25 @@ class MainViewModel(QObject):
         self.health_changed.emit()
         return self._health_history_result
 
+    def delete_health_history(self, failure_id: UUID) -> None:
+        if self._health_query_service is None:
+            raise RuntimeError("Health history is unavailable.")
+        self._health_query_service.delete_failure_history(failure_id)
+        remaining = tuple(
+            item
+            for item in self._health_history_result.items
+            if item.failure_id != failure_id
+        )
+        next_cursor = self._health_history_result.next_cursor
+        if next_cursor is not None:
+            next_cursor = max(0, next_cursor - 1)
+        self._health_history_result = FailureHistoryResult(
+            remaining,
+            next_cursor,
+            len(remaining),
+        )
+        self.health_changed.emit()
+
     def save_expectation(
         self,
         *,

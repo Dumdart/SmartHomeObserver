@@ -90,7 +90,7 @@ def test_health_expectation_mapper_round_trips_topic_and_condition() -> None:
         (TopicAbsentCondition(), {"kind": "topic_absent"}),
         (
             FreshnessCondition(60),
-            {"kind": "fresh_within", "max_age_seconds": 60},
+            {"kind": "fresh_within", "max_age_seconds": 60.0},
         ),
     ],
 )

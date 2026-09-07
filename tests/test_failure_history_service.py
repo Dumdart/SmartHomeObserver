@@ -130,6 +130,16 @@ def test_evidence_is_bounded_and_typo_alias_is_supported():
     assert service.get_boudned_evidence(failure, 3) == "012"
 
 
+def test_delete_delegates_to_failure_repository():
+    failure_repository = MagicMock()
+    service = FailureHistoryService(failure_repository)
+    failure_id = uuid4()
+
+    service.delete(failure_id)
+
+    failure_repository.delete.assert_called_once_with(failure_id)
+
+
 @pytest.mark.parametrize("kwargs", [{"limit": 0}, {"cursor": -1}, {"limit": -1}])
 def test_pagination_rejects_invalid_arguments(kwargs):
     service = _service([])
