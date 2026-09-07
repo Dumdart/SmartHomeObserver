@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
 )
 
 
-WORKSPACE_CONTROL_HEIGHT = 32
+# Keep controls tall enough for the platform style's size hint.  A fixed
+# height below that hint can clip controls on Linux and high-DPI desktops.
+WORKSPACE_CONTROL_HEIGHT = 36
 WORKSPACE_HEADER_HEIGHT = 24
 
 
