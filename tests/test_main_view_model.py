@@ -723,6 +723,28 @@ async def test_switching_broker_profile_activates_its_workspace_after_connecting
     await scenario()
 
 
+async def test_switching_broker_clears_previous_health_report_and_history() -> None:
+    repository = FakeObserverRepository()
+    brokers = FakeBrokerRepository(MqttConfig("default", 1883, "", ""))
+    runtime = runtime_for(repository, brokers)
+    view_model = MainViewModel(runtime)
+    previous = view_model.active_broker_profile.id
+    replacement = view_model.broker_profiles[1]
+    view_model._health_report_result = MagicMock(broker_id=previous)
+    view_model._health_history_result = MagicMock(items=(MagicMock(),))
+    changes: list[bool] = []
+    view_model.health_changed.connect(lambda: changes.append(True))
+
+    await view_model.activate_broker_profile(
+        replacement.id,
+        replacement.config,
+    )
+
+    assert view_model.health_report is None
+    assert view_model.health_history.items == ()
+    assert changes == [True]
+
+
 async def test_switching_broker_profile_moves_live_message_observation() -> None:
     async def scenario() -> None:
         brokers = FakeBrokerRepository(MqttConfig("default", 1883, "", ""))

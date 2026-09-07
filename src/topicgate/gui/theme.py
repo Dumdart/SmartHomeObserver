@@ -36,6 +36,20 @@ QLabel#brokerConnectionStatus { border-radius: 9px; padding: 3px 9px; font-weigh
 QLabel#brokerConnectionStatus[connectionState="connected"] { color: #11653f; background: #dcf7e9; }
 QLabel#brokerConnectionStatus[connectionState="connecting"], QLabel#brokerConnectionStatus[connectionState="reconnecting"] { color: #8a4b00; background: #fff0d5; }
 QLabel#brokerConnectionStatus[connectionState="disconnected"] { color: #4b5563; background: #e9edf1; }
+QPushButton#brokerHealthSummary, QPushButton#topicHealthBadge { text-align: left; font-weight: 650; padding: 3px 8px; }
+QPushButton#topicHealthBadge { border-radius: 9px; font-size: 11px; }
+QPushButton#brokerHealthSummary { color: #4b5563; background: #fbfcfd; border-color: #c8ced6; }
+QPushButton#brokerHealthSummary[healthTone="success"] { color: #11653f; border-left: 3px solid #4ca878; }
+QPushButton#brokerHealthSummary[healthTone="problem"] { color: #8f2525; background: #fff8f8; border-left: 3px solid #c65353; }
+QPushButton#brokerHealthSummary[healthTone="warning"] { color: #8a4b00; background: #fffaf0; border-left: 3px solid #c58a29; }
+QPushButton#brokerHealthSummary[healthTone="neutral"] { color: #4b5563; border-left: 3px solid #89939f; }
+QPushButton#topicHealthBadge[healthTone="success"] { color: #11653f; background: #dcf7e9; border-color: #a8dec2; }
+QPushButton#topicHealthBadge[healthTone="problem"] { color: #8f2525; background: #fff0f0; border-color: #d7a4a4; }
+QPushButton#topicHealthBadge[healthTone="warning"] { color: #8a4b00; background: #fff0d5; border-color: #e3c68f; }
+QPushButton#topicHealthBadge[healthTone="neutral"] { color: #4b5563; background: #e9edf1; border-color: #c8ced6; }
+QLabel[healthTone="problem"] { color: #8f2525; }
+QLabel[healthTone="warning"] { color: #8a4b00; }
+QLabel[healthTone="success"] { color: #11653f; }
 QWidget#brokerProfilePopupRow { background: #ffffff; }
 QToolButton#selectBrokerProfileButton { border: 0; text-align: left; padding: 6px 8px; }
 QToolButton#selectBrokerProfileButton:hover { background: #eef2f6; }

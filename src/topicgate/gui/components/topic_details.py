@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
+    QPushButton,
     QTabBar,
     QTableWidget,
     QTableWidgetItem,
@@ -29,6 +30,7 @@ class TopicDetailsPane(WorkspacePane):
     topic_selected = Signal(str)
     publish_requested = Signal(str, str, str)
     subscription_editing_changed = Signal(bool)
+    expectations_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__("No topic selected")
@@ -38,6 +40,14 @@ class TopicDetailsPane(WorkspacePane):
         self._context_kind.setAccessibleName("Topic filter")
         self._context_kind.setHidden(True)
         self.header_layout.insertWidget(1, self._context_kind)
+
+        self._health_badge = QPushButton()
+        self._health_badge.setObjectName("topicHealthBadge")
+        self._health_badge.setAccessibleName("Open topic expectations")
+        self._health_badge.setToolTip("Open this topic's expectation settings")
+        self._health_badge.clicked.connect(self.expectations_requested.emit)
+        self._health_badge.setHidden(True)
+        self.header_layout.insertWidget(2, self._health_badge)
 
         self._edit_button = QToolButton()
         self._edit_button.setObjectName("topicEditButton")
@@ -175,6 +185,13 @@ class TopicDetailsPane(WorkspacePane):
             accessible_name,
         )
         self._context_kind.setVisible(showing_filter)
+        topic_health = view_model.selected_topic_health
+        self._health_badge.setVisible(bool(topic_health.label) and not showing_filter)
+        self._health_badge.setText(topic_health.label)
+        self._health_badge.setToolTip(topic_health.detail)
+        self._health_badge.setProperty("healthTone", topic_health.tone)
+        self._health_badge.style().unpolish(self._health_badge)
+        self._health_badge.style().polish(self._health_badge)
         self._edit_button.setEnabled(subscription is not None)
         if subscription is None and self._edit_button.isChecked():
             self._edit_button.setChecked(False)
@@ -232,6 +249,9 @@ class TopicDetailsPane(WorkspacePane):
     @property
     def is_editing_subscription(self) -> bool:
         return self._edit_button.isChecked()
+
+    def set_settings_visible(self, visible: bool) -> None:
+        self._edit_button.setChecked(visible)
 
     def focus_payload(self) -> None:
         self._decoded_payload.setFocus(Qt.FocusReason.OtherFocusReason)

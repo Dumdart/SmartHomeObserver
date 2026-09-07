@@ -12,3 +12,4 @@ __pycache__/
 .pytest-tmp/
 design-qa.md
 .codex-artifacts/
+artifacts/health-expectation-ui/

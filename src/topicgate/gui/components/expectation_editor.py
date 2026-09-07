@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -28,6 +29,7 @@ from topicgate.core.models.health.condition import InRangeCondition
 from topicgate.core.models.health.condition import OutSideCondition
 from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.gui.main_view_model import MainViewModel
+from topicgate.presentation.health_presentation import finding_result_label
 
 
 class ExpectationEditor(QWidget):
@@ -45,6 +47,7 @@ class ExpectationEditor(QWidget):
         self._view_model = view_model
         self._target_kind = target_kind
         self._selected_id: UUID | None = None
+        self._editing = target_kind == "topic"
         self._expectations: tuple[HealthExpectation, ...] = ()
         self.setObjectName(f"{target_kind}ExpectationEditor")
 
@@ -54,11 +57,18 @@ class ExpectationEditor(QWidget):
         self._context.setObjectName("expectationContext")
         self._context.setWordWrap(True)
         layout.addWidget(self._context)
+        self._result_summary = QLabel()
+        self._result_summary.setObjectName("expectationResultSummary")
+        self._result_summary.setWordWrap(True)
+        self._result_summary.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(self._result_summary)
 
         self._table = QTableWidget(0, 4)
         self._table.setObjectName("expectationTable")
         self._table.setHorizontalHeaderLabels(
-            ["Name", "Expected", "State", "Revision"]
+            ["Name", "Expected", "Configuration", "Result"]
         )
         self._table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -75,7 +85,9 @@ class ExpectationEditor(QWidget):
         self._table.cellClicked.connect(self._select_row)
         layout.addWidget(self._table, 1)
 
-        form = QFormLayout()
+        self._form_container = QWidget()
+        self._form_container.setObjectName("expectationEditingControls")
+        form = QFormLayout(self._form_container)
         self._name = QLineEdit()
         self._name.setObjectName("expectationName")
         self._description = QLineEdit()
@@ -88,6 +100,7 @@ class ExpectationEditor(QWidget):
         if target_kind == "broker":
             self._expected.addItems([item.value for item in ConnectionStatus])
             self._expected.setCurrentText(ConnectionStatus.CONNECTED.value)
+            self._expected.setMaximumWidth(220)
         self._encoding = QComboBox()
         self._encoding.setObjectName("expectationEncoding")
         self._encoding.addItem("UTF-8 text", "utf-8")
@@ -109,6 +122,14 @@ class ExpectationEditor(QWidget):
         self._expected_editor.setObjectName("expectationExpectedEditor")
         self._expected_editor.addWidget(self._expected)
         self._expected_editor.addWidget(self._expected_values)
+        self._expected_editor.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._expected_editor.setMaximumHeight(32)
+        if target_kind == "broker":
+            self._condition_kind.setMaximumWidth(220)
+            self._expected_editor.setMaximumWidth(220)
         self._enabled = QCheckBox("Enabled")
         self._enabled.setObjectName("expectationEnabled")
         self._enabled.setChecked(True)
@@ -119,19 +140,23 @@ class ExpectationEditor(QWidget):
         self._store_action.setObjectName("expectationStoreAction")
         self._store_action.setChecked(True)
         form.addRow("Name", self._name)
-        form.addRow("Description", self._description)
         form.addRow("Condition", self._condition_kind)
         form.addRow("Expected", self._expected_editor)
         self._condition_hint = QLabel()
         self._condition_hint.setObjectName("expectationConditionHint")
         self._condition_hint.setWordWrap(True)
-        form.addRow("Format", self._condition_hint)
+        form.addRow(self._condition_hint)
         if target_kind == "topic":
             form.addRow("Encoding", self._encoding)
         form.addRow("", self._enabled)
         form.addRow("Actions", self._log_action)
         form.addRow("", self._store_action)
-        layout.addLayout(form)
+        form.addRow("Description", self._description)
+        self._revision = QLabel()
+        self._revision.setObjectName("expectationRevision")
+        form.addRow("Details", self._revision)
+        layout.addWidget(self._form_container)
+        self._form_container.setVisible(self._editing)
 
         buttons = QHBoxLayout()
         self._new_button = QPushButton("Add expectation")
@@ -162,6 +187,16 @@ class ExpectationEditor(QWidget):
                 else "Select an exact topic to configure expectations."
             )
             self._expectations = self._view_model.topic_expectations
+            topic_health = self._view_model.selected_topic_health
+            self._result_summary.setText(
+                "\n".join(
+                    part
+                    for part in (topic_health.detail, topic_health.evidence)
+                    if part
+                )
+                if available
+                else ""
+            )
         else:
             available = True
             self._context.setText(
@@ -169,6 +204,7 @@ class ExpectationEditor(QWidget):
                 f"{self._view_model.active_broker_profile.name}"
             )
             self._expectations = self._view_model.broker_expectations
+            self._result_summary.setText("")
 
         self._table.setRowCount(len(self._expectations))
         for row, expectation in enumerate(self._expectations):
@@ -176,7 +212,7 @@ class ExpectationEditor(QWidget):
                 expectation.name,
                 self._expected_label(expectation),
                 "Enabled" if expectation.enabled else "Disabled",
-                str(expectation.revision),
+                finding_result_label(expectation, self._view_model.health_report),
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -198,8 +234,12 @@ class ExpectationEditor(QWidget):
                 return
         self._selected_id = None
         self._delete_button.setEnabled(False)
+        if self._target_kind == "broker":
+            self._form_container.setVisible(self._editing)
 
     def _new(self) -> None:
+        self._editing = True
+        self._form_container.setVisible(True)
         self._selected_id = None
         self._name.clear()
         self._description.clear()
@@ -208,6 +248,7 @@ class ExpectationEditor(QWidget):
         self._store_action.setChecked(True)
         self._condition_kind.setCurrentIndex(0)
         self._expected_values.clear()
+        self._revision.setText("New expectation")
         if self._target_kind == "topic":
             self._expected.setEditText("")
             self._encoding.setCurrentIndex(0)
@@ -221,6 +262,8 @@ class ExpectationEditor(QWidget):
             self._load(self._expectations[row])
 
     def _load(self, expectation: HealthExpectation) -> None:
+        self._editing = True
+        self._form_container.setVisible(True)
         self._selected_id = expectation.expectation_id
         self._name.setText(expectation.name)
         self._description.setText(expectation.description)
@@ -235,7 +278,23 @@ class ExpectationEditor(QWidget):
         )
         values = self._condition_values(expectation.condition)
         self._set_expected_values(values)
+        self._revision.setText(f"Revision {expectation.revision}")
         self._delete_button.setEnabled(True)
+
+    def select_expectation(self, expectation_id: object) -> None:
+        """Select an expectation from another health presentation."""
+        selected = next(
+            (
+                item
+                for item in self._expectations
+                if item.expectation_id == expectation_id
+            ),
+            None,
+        )
+        if selected is not None:
+            self._load(selected)
+            row = self._expectations.index(selected)
+            self._table.selectRow(row)
 
     def _save(self) -> None:
         try:
@@ -255,6 +314,7 @@ class ExpectationEditor(QWidget):
             QMessageBox.warning(self, "Invalid expectation", str(error))
             return
         self._selected_id = None
+        self._editing = self._target_kind == "topic"
         self.render()
 
     def _delete(self) -> None:
@@ -273,6 +333,8 @@ class ExpectationEditor(QWidget):
         self._view_model.delete_expectation(self._selected_id)
         self._selected_id = None
         self._new()
+        self._editing = self._target_kind == "topic"
+        self._form_container.setVisible(self._editing)
         self.render()
 
     def _set_form_enabled(self, enabled: bool) -> None:
@@ -323,14 +385,15 @@ class ExpectationEditor(QWidget):
             if first_value:
                 self._expected.setEditText(first_value[0])
         self._expected_editor.setCurrentIndex(1 if is_multiple else 0)
+        self._expected_editor.setMaximumHeight(90 if is_multiple else 32)
         if is_multiple:
             self._condition_hint.setText(
                 "Enter two comma-separated values, e.g. 1,3."
             )
+            self._condition_hint.setVisible(True)
         else:
-            self._condition_hint.setText(
-                "Enter one expected value, e.g. ExpectedValue."
-            )
+            self._condition_hint.clear()
+            self._condition_hint.setVisible(False)
 
     def _form_expected_values(self) -> tuple[str, ...]:
         condition_kind = self._selected_condition_kind()

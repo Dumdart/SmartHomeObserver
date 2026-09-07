@@ -75,6 +75,12 @@ from topicgate.presentation.retention_presentation import (
     validate_retention_policy_values,
 )
 from topicgate.presentation.snapshot_presentation import size_label
+from topicgate.presentation.health_presentation import (
+    HealthSummary,
+    TopicHealthSummary,
+    broker_health_summary,
+    topic_health_summary,
+)
 from topicgate.processors.condition_factory import ConditionFactory
 
 
@@ -141,11 +147,32 @@ class MainViewModel(QObject):
 
     @property
     def health_report(self) -> ExpectationHealthReport | None:
-        return self._health_report_result
+        return self._current_health_report()
 
     @property
     def health_history(self) -> FailureHistoryResult:
         return self._health_history_result
+
+    @property
+    def health_reporting_available(self) -> bool:
+        return self._health_query_service is not None
+
+    @property
+    def health_summary(self) -> HealthSummary:
+        return broker_health_summary(
+            self._current_health_report(),
+            self._broker_health_expectations(),
+            available=self.health_reporting_available,
+        )
+
+    @property
+    def selected_topic_health(self) -> TopicHealthSummary:
+        return topic_health_summary(
+            self._topic,
+            self._current_health_report(),
+            self.topic_expectations,
+            available=self.health_reporting_available,
+        )
 
     @property
     def topic_expectations(self) -> tuple[HealthExpectation, ...]:
@@ -175,6 +202,24 @@ class MainViewModel(QObject):
             )
             if isinstance(item.target, BrokerTarget)
         )
+
+    def _broker_health_expectations(self) -> tuple[HealthExpectation, ...]:
+        if self._expectation_management_service is None:
+            return ()
+        return tuple(
+            self._expectation_management_service.list_expectations(
+                self.active_broker_profile.id
+            )
+        )
+
+    def _current_health_report(self) -> ExpectationHealthReport | None:
+        report = self._health_report_result
+        if (
+            report is not None
+            and report.broker_id == self.active_broker_profile.id
+        ):
+            return report
+        return None
 
     def refresh_health(self) -> ExpectationHealthReport:
         if self._health_query_service is None:
@@ -1105,6 +1150,9 @@ class MainViewModel(QObject):
             if profile_changed:
                 await self._restart_observer_tasks()
                 self._topic = ""
+                self._health_report_result = None
+                self._health_history_result = FailureHistoryResult((), None, 0)
+                self.health_changed.emit()
             self.refresh_snapshot()
             self.subscriptions_changed.emit()
             self.configuration_changed.emit()

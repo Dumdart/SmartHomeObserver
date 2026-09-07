@@ -3,12 +3,13 @@ import os
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QSettings, Qt
+from PySide6.QtCore import QEvent, QObject, QSettings, Qt
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -47,6 +48,13 @@ from topicgate.core.models.broker_profile import BrokerProfile
 from topicgate.core.models.broker_summary import BrokerSummary
 from topicgate.core.models.health.condition import InRangeCondition
 from topicgate.core.models.health.condition_kind import ConditionKind
+from topicgate.core.models.health import (
+    BrokerTarget,
+    EqualCondition,
+    HealthExpectation,
+    HealthSeverity,
+    HealthStatus,
+)
 from topicgate.core.models.mqtt_observation import MqttObservation as TopicState
 from topicgate.core.models.observer_workspace import ObserverWorkspace
 from topicgate.core.models.subscription import Subscription
@@ -74,7 +82,7 @@ from topicgate.gui.components.snapshot_panel import SnapshotPanel
 from topicgate.gui.components.stored_observations_dialog import (
     StoredObservationsDialog,
 )
-from topicgate.gui.components.health_dialog import HealthDialog
+from topicgate.gui.components.health_inspector import HealthInspector
 from topicgate.gui.components.topic_details import TopicDetailsPane
 from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.gui.gui import MainWindow
@@ -87,7 +95,7 @@ from topicgate.presentation.snapshot_presentation import (
 from topicgate.presentation.topic_presentation import build_topic_tree
 
 
-def test_health_action_opens_broker_scoped_dialog() -> None:
+def test_health_action_opens_broker_scoped_inspector() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
     window = MainWindow(
@@ -101,12 +109,14 @@ def test_health_action_opens_broker_scoped_dialog() -> None:
     action.trigger()
     application.processEvents()
 
-    dialog = window.findChild(HealthDialog, "healthDialog")
-    assert dialog is not None
-    assert dialog.findChild(QTableWidget, "currentHealthTable") is not None
-    assert dialog.findChild(QWidget, "brokerExpectationEditor") is not None
-    assert dialog.findChild(QTableWidget, "healthHistoryTable") is not None
-    dialog.reject()
+    inspector = window.findChild(HealthInspector, "healthInspector")
+    stack = window.findChild(QStackedWidget, "inspectorStack")
+    assert inspector is not None
+    assert stack.currentWidget() is inspector
+    assert inspector.findChild(QTableWidget, "currentBrokerHealthTable") is not None
+    assert inspector.findChild(QTableWidget, "currentTopicHealthTable") is not None
+    assert inspector.findChild(QWidget, "brokerExpectationEditor") is not None
+    assert inspector.findChild(QTableWidget, "healthHistoryTable") is not None
     window.close()
     application.processEvents()
 
@@ -130,9 +140,9 @@ def test_settings_and_health_tabs_reuse_visible_topic_tab_style() -> None:
     assert action is not None
     action.trigger()
     application.processEvents()
-    dialog = window.findChild(HealthDialog, "healthDialog")
-    assert dialog is not None
-    health_tabs = dialog.findChild(QTabWidget, "healthTabs")
+    inspector = window.findChild(HealthInspector, "healthInspector")
+    assert inspector is not None
+    health_tabs = inspector.findChild(QTabWidget, "healthTabs")
     assert health_tabs is not None
     assert health_tabs.tabBar().objectName() == "healthTabs"
     assert "QTabBar#topicSettingsTabs::tab:selected" in LIGHT_THEME
@@ -654,6 +664,110 @@ def test_desktop_persists_snapshot_preferences_and_focuses_search() -> None:
     application.processEvents()
 
 
+def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    window = MainWindow(
+        MainViewModel(runtime_for(repository), repository.state.topic)
+    )
+    stack = window.findChild(QStackedWidget, "inspectorStack")
+    editor = window.findChild(QLineEdit, "expectationName")
+    editor.setText("Unfinished rule")
+
+    window.findChild(QPushButton, "brokerHealthSummary").click()
+
+    assert stack.currentWidget() is window._health_inspector
+    assert window._view_model.topic == repository.state.topic
+    assert editor.text() == "Unfinished rule"
+    window._select_topic(repository.state.topic)
+    assert stack.currentWidget() is window._topic_details
+    assert editor.text() == "Unfinished rule"
+    window.close()
+    application.processEvents()
+
+
+def test_topic_health_badge_opens_existing_expectation_settings() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    window = MainWindow(
+        MainViewModel(runtime_for(repository), repository.state.topic)
+    )
+    window.show()
+    application.processEvents()
+    badge = window.findChild(QPushButton, "topicHealthBadge")
+
+    assert badge.isVisibleTo(window._topic_details)
+    badge.click()
+
+    assert window._context_panel.isVisible()
+    assert window._settings_tabs.currentWidget() is window._topic_expectations
+    window.close()
+    application.processEvents()
+
+
+def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    runtime = runtime_for(repository)
+    broker_id = runtime.active_broker.id
+    expectation = HealthExpectation(
+        uuid4(),
+        1,
+        True,
+        HealthSeverity.CRITICAL,
+        BrokerTarget(broker_id),
+        EqualCondition("connected"),
+        frozenset(),
+        "Connected",
+    )
+    finding = SimpleNamespace(
+        expectation_id=expectation.expectation_id,
+        name=expectation.name,
+        target_kind="broker",
+        target="broker",
+        status=HealthStatus.PROBLEM,
+        evidence_summary="actual=disconnected; expected=connected",
+        evidence_truncated=False,
+    )
+    report = SimpleNamespace(
+        broker_id=broker_id,
+        evaluated_at=datetime.now(timezone.utc),
+        aggregate_status=HealthStatus.PROBLEM,
+        evidence_complete=True,
+        observation_status=HealthStatus.HEALTHY,
+        observation_findings=(),
+        expectation_findings=(finding,),
+        active_failure_count=0,
+        returned_count=1,
+        omitted_count=0,
+    )
+    health_query = MagicMock()
+    health_query.get_health_report.return_value = report
+    management = MagicMock()
+    management.list_expectations.return_value = (expectation,)
+    window = MainWindow(
+        MainViewModel(
+            runtime,
+            repository.state.topic,
+            health_query_service=health_query,
+            expectation_management_service=management,
+        )
+    )
+    timer = window.findChild(QObject, "healthRefreshTimer")
+    timer.setInterval(0)
+
+    window._view_model.topics_changed.emit()
+    application.processEvents()
+
+    assert health_query.get_health_report.called
+    assert "Failed" in window.findChild(
+        QPushButton, "brokerHealthSummary"
+    ).text()
+    assert window._inspector_stack.currentWidget() is window._topic_details
+    window.close()
+    application.processEvents()
+
+
 def test_inspector_starts_from_selection_and_owns_one_snapshot() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
@@ -769,6 +883,12 @@ def test_background_updates_preserve_the_explicit_inspector_view() -> None:
     view_model.connection_changed.emit()
     assert stack.currentIndex() == 0
     assert view_model.topic == repository.state.topic
+
+    window._show_health()
+    view_model.refresh_snapshot(clear_invalid_selection=False)
+    view_model.connection_changed.emit()
+    assert stack.currentWidget() is window._health_inspector
+    assert view_model.topic == repository.state.topic
     window.close()
     application.processEvents()
 
@@ -787,6 +907,11 @@ async def test_reconnect_preserves_the_current_inspector_view() -> None:
     window._show_snapshot()
     await view_model.reconnect_and_observe()
     assert stack.currentIndex() == 0
+    assert view_model.topic == repository.state.topic
+
+    window._show_health()
+    await view_model.reconnect_and_observe()
+    assert stack.currentWidget() is window._health_inspector
     assert view_model.topic == repository.state.topic
     window.close()
     application.processEvents()
@@ -1247,6 +1372,7 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     window = MainWindow(view_model)
     selector = window.findChild(QComboBox, "connectionBrokerSelector")
     lifecycle = window.findChild(QPushButton, "brokerLifecycleButton")
+    health = window.findChild(QPushButton, "brokerHealthSummary")
     inspect_snapshot = window.findChild(QPushButton, "inspectSnapshotButton")
     profile_menu = window.findChild(QMenu, "brokerProfileSelectorMenu")
 
@@ -1264,9 +1390,16 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     window.show()
     application.processEvents()
     assert selector.isVisible()
+    assert health.isVisible()
     assert inspect_snapshot.isVisible()
     assert lifecycle.isVisible()
     assert lifecycle.text() == "Disconnect"
+    assert selector.geometry().top() == lifecycle.geometry().top()
+    assert health.geometry().top() == inspect_snapshot.geometry().top()
+    assert selector.geometry().right() == health.geometry().right()
+    assert lifecycle.geometry().left() == inspect_snapshot.geometry().left()
+    assert lifecycle.width() == inspect_snapshot.width()
+    assert selector.geometry().top() < health.geometry().top()
     assert [
         action.defaultWidget()
         .findChild(QToolButton, "selectBrokerProfileButton")
@@ -1301,7 +1434,6 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     assert [action.text() for action in window.menuBar().actions()] == [
         "&File",
         "Stored observations",
-        "Broker health",
         "&View",
         "&Help",
     ]
@@ -1312,6 +1444,7 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
         file_menu.actions()
     )
     assert window.findChild(QAction, "healthAction") not in file_menu.actions()
+    assert window.findChild(QAction, "healthAction") in window._view_menu.actions()
 
     assert window.menuBar().cornerWidget(Qt.Corner.TopRightCorner) is None
     window.close()
