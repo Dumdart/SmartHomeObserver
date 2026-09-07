@@ -58,7 +58,7 @@ def test_expectation_editor_state_maps_topic_payloads_and_refreshes_health() -> 
         expectation_id=None,
         name=" Device status ",
         description=" Expected online ",
-        expected_value="b25saW5l",
+        expected_values="b25saW5l",
         encoding="base64",
     )
 
@@ -82,7 +82,7 @@ def test_expectation_editor_rejects_wildcard_topic_targets() -> None:
             expectation_id=None,
             name="Status",
             description="",
-            expected_value="online",
+            expected_values="online",
         )
 
 

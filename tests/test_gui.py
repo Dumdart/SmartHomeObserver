@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QStackedWidget,
     QSplitter,
     QSpinBox,
     QTabBar,
@@ -43,6 +44,8 @@ from topicgate.core.models.observation_status import ObservationStatus
 from topicgate.core.models.topic_message import TopicMessage
 from topicgate.core.models.broker_profile import BrokerProfile
 from topicgate.core.models.broker_summary import BrokerSummary
+from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.core.models.mqtt_observation import MqttObservation as TopicState
 from topicgate.core.models.observer_workspace import ObserverWorkspace
 from topicgate.core.models.subscription import Subscription
@@ -153,6 +156,40 @@ def test_topic_expectation_editor_creates_utf8_rule() -> None:
     created = management.create_expectation.call_args.args[0]
     assert created.name == "Temperature"
     assert created.condition.expected_value == b"21.5"
+    window.close()
+    application.processEvents()
+
+
+def test_topic_expectation_editor_selects_multi_value_condition() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    management = MagicMock()
+    management.list_expectations.return_value = ()
+    management.create_expectation.side_effect = lambda item, **_kwargs: item
+    view_model = MainViewModel(
+        runtime_for(repository),
+        repository.state.topic,
+        expectation_management_service=management,
+    )
+    window = MainWindow(view_model)
+    editor = window.findChild(QWidget, "topicExpectationEditor")
+
+    editor.findChild(QLineEdit, "expectationName").setText("Device state")
+    condition_kind = editor.findChild(QComboBox, "expectationConditionKind")
+    condition_kind.setCurrentIndex(
+        condition_kind.findData(ConditionKind.IN_RANGE)
+    )
+    expected = editor.findChild(QPlainTextEdit, "expectationExpectedValues")
+    expected.setPlainText("online,degraded")
+
+    expected_editor = editor.findChild(QStackedWidget, "expectationExpectedEditor")
+    assert expected_editor.currentWidget() is expected
+
+    editor.findChild(QPushButton, "saveExpectationButton").click()
+
+    created = management.create_expectation.call_args.args[0]
+    assert created.condition == InRangeCondition((b"online", b"degraded"))
+    assert ConditionKind(condition_kind.currentData()) is ConditionKind.IN_RANGE
     window.close()
     application.processEvents()
 

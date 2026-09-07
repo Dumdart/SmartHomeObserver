@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
 from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import OutSideCondition
 from topicgate.core.models.health.expectation_failure import ExpectationFailure
 from topicgate.core.models.health.expectation_state import ExpectationState
 from topicgate.core.models.health.expectation_target import TopicTarget
@@ -41,6 +45,61 @@ def test_health_expectation_mapper_round_trips_topic_and_condition() -> None:
         "topic": "devices/status",
     }
     assert row.actions == ["log", "store_failure"]
+
+
+@pytest.mark.parametrize(
+    ("condition", "serialized"),
+    [
+        (
+            EqualCondition(b"online"),
+            {
+                "kind": "equal",
+                "expected_value": "b25saW5l",
+                "value_type": "bytes",
+            },
+        ),
+        (
+            InRangeCondition((b"online", b"degraded")),
+            {
+                "kind": "in_range",
+                "expected_values": ["b25saW5l", "ZGVncmFkZWQ="],
+                "value_type": "bytes",
+            },
+        ),
+        (
+            OutSideCondition(("offline", "unknown")),
+            {
+                "kind": "outside",
+                "expected_values": ["offline", "unknown"],
+            },
+        ),
+    ],
+)
+def test_condition_mapper_round_trips_all_condition_kinds(
+    condition: EqualCondition | InRangeCondition | OutSideCondition,
+    serialized: dict,
+) -> None:
+    assert HealthExpectationMapper._condition_to_dict(condition) == serialized
+    assert HealthExpectationMapper._dict_to_condition(serialized) == condition
+
+
+@pytest.mark.parametrize(
+    "serialized",
+    [
+        {"kind": "in_range", "expected_values": []},
+        {
+            "kind": "outside",
+            "expected_values": ["%%%="],
+            "value_type": "bytes",
+        },
+        {"kind": "unknown", "expected_value": "online"},
+    ],
+)
+def test_condition_mapper_rejects_invalid_condition_json(
+    serialized: dict,
+) -> None:
+    with pytest.raises(ValueError):
+        HealthExpectationMapper._dict_to_condition(serialized)
 
 
 def test_expectation_failure_mapper_round_trips_optional_values() -> None:

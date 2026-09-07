@@ -11,7 +11,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -19,12 +21,17 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.models.connection_status import ConnectionStatus
-from topicgate.core.models.health import ActionKind, EqualCondition, HealthExpectation
+from topicgate.core.models.health import ActionKind, HealthExpectation
+from topicgate.core.models.health.condition import Condition
+from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import OutSideCondition
+from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.gui.main_view_model import MainViewModel
 
 
 class ExpectationEditor(QWidget):
-    """Edit broker- or topic-scoped equality expectations."""
+    """Edit broker- or topic-scoped health expectations."""
 
     def __init__(
         self,
@@ -76,6 +83,8 @@ class ExpectationEditor(QWidget):
         self._expected = QComboBox()
         self._expected.setObjectName("expectationExpectedValue")
         self._expected.setEditable(target_kind == "topic")
+        if target_kind == "topic":
+            self._expected.lineEdit().setPlaceholderText("e.g. ExpectedValue")
         if target_kind == "broker":
             self._expected.addItems([item.value for item in ConnectionStatus])
             self._expected.setCurrentText(ConnectionStatus.CONNECTED.value)
@@ -84,6 +93,22 @@ class ExpectationEditor(QWidget):
         self._encoding.addItem("UTF-8 text", "utf-8")
         self._encoding.addItem("Base64 bytes", "base64")
         self._encoding.setVisible(target_kind == "topic")
+        self._condition_kind = QComboBox()
+        self._condition_kind.setObjectName("expectationConditionKind")
+        self._condition_kind.addItem("Equals", ConditionKind.EQUAL)
+        self._condition_kind.addItem("One of", ConditionKind.IN_RANGE)
+        self._condition_kind.addItem("Not one of", ConditionKind.OUTSIDE)
+        self._condition_kind.currentIndexChanged.connect(
+            self._condition_kind_changed
+        )
+        self._expected_values = QPlainTextEdit()
+        self._expected_values.setObjectName("expectationExpectedValues")
+        self._expected_values.setPlaceholderText("e.g. 1,3")
+        self._expected_values.setMaximumHeight(90)
+        self._expected_editor = QStackedWidget()
+        self._expected_editor.setObjectName("expectationExpectedEditor")
+        self._expected_editor.addWidget(self._expected)
+        self._expected_editor.addWidget(self._expected_values)
         self._enabled = QCheckBox("Enabled")
         self._enabled.setObjectName("expectationEnabled")
         self._enabled.setChecked(True)
@@ -95,7 +120,12 @@ class ExpectationEditor(QWidget):
         self._store_action.setChecked(True)
         form.addRow("Name", self._name)
         form.addRow("Description", self._description)
-        form.addRow("Expected", self._expected)
+        form.addRow("Condition", self._condition_kind)
+        form.addRow("Expected", self._expected_editor)
+        self._condition_hint = QLabel()
+        self._condition_hint.setObjectName("expectationConditionHint")
+        self._condition_hint.setWordWrap(True)
+        form.addRow("Format", self._condition_hint)
         if target_kind == "topic":
             form.addRow("Encoding", self._encoding)
         form.addRow("", self._enabled)
@@ -176,6 +206,8 @@ class ExpectationEditor(QWidget):
         self._enabled.setChecked(True)
         self._log_action.setChecked(True)
         self._store_action.setChecked(True)
+        self._condition_kind.setCurrentIndex(0)
+        self._expected_values.clear()
         if self._target_kind == "topic":
             self._expected.setEditText("")
             self._encoding.setCurrentIndex(0)
@@ -197,19 +229,12 @@ class ExpectationEditor(QWidget):
         self._store_action.setChecked(
             ActionKind.STORE_FAILURE in expectation.actions
         )
-        value = expectation.condition.expected_value
-        if self._target_kind == "broker":
-            self._expected.setCurrentText(str(value))
-        elif isinstance(value, bytes):
-            try:
-                self._expected.setEditText(value.decode("utf-8"))
-                self._encoding.setCurrentIndex(0)
-            except UnicodeDecodeError:
-                self._expected.setEditText(b64encode(value).decode("ascii"))
-                self._encoding.setCurrentIndex(1)
-        else:
-            self._expected.setEditText(str(value))
-            self._encoding.setCurrentIndex(0)
+        condition_kind = self._condition_kind_for(expectation.condition)
+        self._condition_kind.setCurrentIndex(
+            self._condition_kind.findData(condition_kind)
+        )
+        values = self._condition_values(expectation.condition)
+        self._set_expected_values(values)
         self._delete_button.setEnabled(True)
 
     def _save(self) -> None:
@@ -219,7 +244,8 @@ class ExpectationEditor(QWidget):
                 expectation_id=self._selected_id,
                 name=self._name.text(),
                 description=self._description.text(),
-                expected_value=self._expected.currentText(),
+                condition_kind=self._selected_condition_kind(),
+                expected_values=self._form_expected_values(),
                 encoding=str(self._encoding.currentData() or "utf-8"),
                 enabled=self._enabled.isChecked(),
                 log_action=self._log_action.isChecked(),
@@ -253,7 +279,10 @@ class ExpectationEditor(QWidget):
         for widget in (
             self._name,
             self._description,
+            self._condition_kind,
+            self._expected_editor,
             self._expected,
+            self._expected_values,
             self._encoding,
             self._enabled,
             self._log_action,
@@ -265,9 +294,124 @@ class ExpectationEditor(QWidget):
     @staticmethod
     def _expected_label(expectation: HealthExpectation) -> str:
         condition = expectation.condition
-        if not isinstance(condition, EqualCondition):
-            return type(condition).__name__
-        value = condition.expected_value
+        values = ExpectationEditor._condition_values(condition)
+        rendered = ", ".join(
+            ExpectationEditor._display_value(value) for value in values
+        )
+        if isinstance(condition, EqualCondition):
+            return rendered
+        if isinstance(condition, InRangeCondition):
+            return f"One of: {rendered}"
+        if isinstance(condition, OutSideCondition):
+            return f"Not one of: {rendered}"
+        return type(condition).__name__
+
+    def _condition_kind_changed(self, index: int) -> None:
+        condition_kind = self._condition_kind_from_value(
+            self._condition_kind.itemData(index)
+        )
+        is_multiple = condition_kind in {
+            ConditionKind.IN_RANGE,
+            ConditionKind.OUTSIDE,
+        }
+        if is_multiple and not self._expected_values.toPlainText():
+            current_value = self._expected.currentText()
+            if current_value:
+                self._expected_values.setPlainText(current_value)
+        elif not is_multiple and not self._expected.currentText():
+            first_value = self._form_expected_values()[0:1]
+            if first_value:
+                self._expected.setEditText(first_value[0])
+        self._expected_editor.setCurrentIndex(1 if is_multiple else 0)
+        if is_multiple:
+            self._condition_hint.setText(
+                "Enter two comma-separated values, e.g. 1,3."
+            )
+        else:
+            self._condition_hint.setText(
+                "Enter one expected value, e.g. ExpectedValue."
+            )
+
+    def _form_expected_values(self) -> tuple[str, ...]:
+        condition_kind = self._selected_condition_kind()
+        if condition_kind is ConditionKind.EQUAL:
+            return (self._expected.currentText(),)
+        return tuple(
+            value.strip()
+            for line in self._expected_values.toPlainText().splitlines()
+            for value in line.split(",")
+            if value.strip()
+        )
+
+    def _selected_condition_kind(self) -> ConditionKind:
+        return self._condition_kind_from_value(self._condition_kind.currentData())
+
+    @staticmethod
+    def _condition_kind_from_value(value: object) -> ConditionKind:
+        if isinstance(value, ConditionKind):
+            return value
+        try:
+            return ConditionKind(str(value))
+        except ValueError as error:
+            raise ValueError(f"Unsupported condition kind: {value!r}") from error
+
+    @staticmethod
+    def _condition_kind_for(condition: Condition) -> ConditionKind:
+        if isinstance(condition, EqualCondition):
+            return ConditionKind.EQUAL
+        if isinstance(condition, InRangeCondition):
+            return ConditionKind.IN_RANGE
+        if isinstance(condition, OutSideCondition):
+            return ConditionKind.OUTSIDE
+        raise ValueError(
+            f"Unsupported expectation condition: {type(condition).__name__}"
+        )
+
+    @staticmethod
+    def _condition_values(condition: Condition) -> tuple[bytes | str, ...]:
+        if isinstance(condition, EqualCondition):
+            return (condition.expected_value,)
+        if isinstance(condition, (InRangeCondition, OutSideCondition)):
+            return condition.expected_values
+        raise ValueError(
+            f"Unsupported expectation condition: {type(condition).__name__}"
+        )
+
+    def _set_expected_values(self, values: tuple[bytes | str, ...]) -> None:
+        condition_kind = self._selected_condition_kind()
+        if condition_kind is ConditionKind.EQUAL:
+            value = values[0] if values else ""
+            self._set_single_expected_value(value)
+            return
+
+        rendered_values = self._render_values(values)
+        self._expected_values.setPlainText("\n".join(rendered_values))
+
+    def _set_single_expected_value(self, value: bytes | str) -> None:
+        rendered = self._render_values((value,))[0]
+        if self._target_kind == "broker":
+            self._expected.setCurrentText(rendered)
+        else:
+            self._expected.setEditText(rendered)
+
+    def _render_values(self, values: tuple[bytes | str, ...]) -> tuple[str, ...]:
+        if any(isinstance(value, bytes) for value in values):
+            if all(isinstance(value, bytes) for value in values):
+                try:
+                    rendered = tuple(value.decode("utf-8") for value in values)
+                    self._encoding.setCurrentIndex(0)
+                    return rendered
+                except UnicodeDecodeError:
+                    self._encoding.setCurrentIndex(1)
+                    return tuple(
+                        b64encode(value).decode("ascii")
+                        for value in values
+                    )
+        self._encoding.setCurrentIndex(0)
+        return tuple(str(value) for value in values)
+
+    @staticmethod
+    def _display_value(value: bytes | str) -> str:
         if isinstance(value, bytes):
             try:
                 return value.decode("utf-8")

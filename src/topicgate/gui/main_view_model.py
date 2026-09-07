@@ -23,6 +23,7 @@ from topicgate.app.services.mcp_setup_service import McpSetupService
 from topicgate.app.models.mcp_setup import McpPreflightCheck, McpSetupInformation
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.models.broker_summary import BrokerSummary
+from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.core.models.message_filter import MessageFilter, OrderType
 from topicgate.core.models.mqtt_observation import MqttObservation, ObservationSource
 from topicgate.core.models.subscription import Subscription
@@ -74,6 +75,7 @@ from topicgate.presentation.retention_presentation import (
     validate_retention_policy_values,
 )
 from topicgate.presentation.snapshot_presentation import size_label
+from topicgate.processors.condition_factory import ConditionFactory
 
 
 class MainViewModel(QObject):
@@ -221,27 +223,36 @@ class MainViewModel(QObject):
         expectation_id: UUID | None,
         name: str,
         description: str,
-        expected_value: str,
+        expected_values: tuple[str, ...] | str,
+        condition_kind: ConditionKind = ConditionKind.EQUAL,
         encoding: str = "utf-8",
         enabled: bool = True,
         log_action: bool = True,
         store_failure: bool = True,
     ) -> HealthExpectation:
         service = self._require_expectation_management()
+
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("Expectation name is required.")
         broker_id = self.active_broker_profile.id
+        if isinstance(expected_values, str):
+            expected_values = (expected_values,)
+
         if target_kind == "topic":
             if not self._topic or mqtt_filter_has_wildcards(self._topic):
                 raise ValueError("Select an exact MQTT topic first.")
             target = TopicTarget(broker_id, self._topic)
-            condition_value = self._decode_expected_value(expected_value, encoding)
+            condition_values = self._decode_expected_values(
+                expected_values,
+                encoding,
+            )
         elif target_kind == "broker":
             target = BrokerTarget(broker_id)
-            condition_value = expected_value
+            condition_values = expected_values
         else:
             raise ValueError("target_kind must be 'topic' or 'broker'")
+
         actions = frozenset(
             action
             for selected, action in (
@@ -250,6 +261,7 @@ class MainViewModel(QObject):
             )
             if selected
         )
+
         if expectation_id is None:
             result = service.create_expectation(
                 HealthExpectation(
@@ -258,7 +270,10 @@ class MainViewModel(QObject):
                     enabled=enabled,
                     severity=HealthSeverity.CRITICAL,
                     target=target,
-                    condition=EqualCondition(condition_value),
+                    condition=ConditionFactory.build_condition(
+                        condition_kind,
+                        condition_values,
+                    ),
                     actions=actions,
                     name=normalized_name,
                     description=description.strip(),
@@ -271,7 +286,10 @@ class MainViewModel(QObject):
                 broker_id=broker_id,
                 is_enabled=enabled,
                 new_target=target,
-                new_condition=EqualCondition(condition_value),
+                new_condition=ConditionFactory.build_condition(
+                    condition_kind,
+                    condition_values,
+                ),
                 new_actions=actions,
                 name=normalized_name,
                 description=description.strip(),
@@ -321,14 +339,24 @@ class MainViewModel(QObject):
         return self._expectation_management_service
 
     @staticmethod
-    def _decode_expected_value(value: str, encoding: str) -> bytes:
+    def _decode_expected_values(
+        values: tuple[str, ...],
+        encoding: str,
+    ) -> tuple[bytes, ...]:
         if encoding == "utf-8":
-            return value.encode("utf-8")
+            return tuple(value.encode("utf-8") for value in values)
+
         if encoding == "base64":
             try:
-                return b64decode(value, validate=True)
+                return tuple(
+                    b64decode(value, validate=True)
+                    for value in values
+                )
             except (binascii.Error, ValueError) as error:
-                raise ValueError("Expected value is not valid base64.") from error
+                raise ValueError(
+                    "One or more expected values are not valid base64."
+                ) from error
+
         raise ValueError("Encoding must be UTF-8 or base64.")
 
     @property

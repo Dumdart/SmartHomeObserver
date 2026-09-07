@@ -4,8 +4,16 @@ import asyncio
 import ctypes
 import sys
 
-from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QCoreApplication, QRectF, Qt
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QIcon,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import QApplication, QSplashScreen
 from qasync import QEventLoop
 
@@ -15,6 +23,99 @@ from topicgate.gui.main_window import MainWindow
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.theme import apply_light_theme
 from topicgate.paths import asset_path
+
+
+STARTUP_SCREEN_SIZE = (560, 280)
+
+
+def create_startup_pixmap(logo: QPixmap) -> QPixmap:
+    """Create a startup surface using the desktop application's visual tokens."""
+    width, height = STARTUP_SCREEN_SIZE
+    pixmap = QPixmap(width, height)
+    pixmap.fill(QColor("#f3f4f6"))
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    painter.setPen(QPen(QColor("#c8ced6"), 1))
+    painter.setBrush(QColor("#ffffff"))
+    painter.drawRoundedRect(QRectF(4.5, 4.5, 551, 271), 8, 8)
+
+    if not logo.isNull():
+        scaled_logo = logo.scaled(
+            52,
+            52,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        painter.drawPixmap(28, 26, scaled_logo)
+
+    painter.setPen(QColor("#202124"))
+    painter.setFont(QFont("Segoe UI", 22, QFont.Weight.DemiBold))
+    painter.drawText(
+        QRectF(96, 25, 430, 34),
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        "TopicGate",
+    )
+
+    painter.setPen(QColor("#4b5563"))
+    painter.setFont(QFont("Segoe UI", 10))
+    painter.drawText(
+        QRectF(96, 57, 430, 22),
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        "MQTT observer desktop",
+    )
+
+    painter.setPen(QPen(QColor("#e4e7eb"), 1))
+    painter.drawLine(28, 96, 532, 96)
+
+    painter.setPen(QColor("#405d7a"))
+    painter.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
+    painter.drawText(
+        QRectF(28, 119, 504, 20),
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        "SECURE LOCAL MQTT ACCESS",
+    )
+
+    painter.setPen(QColor("#202124"))
+    painter.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+    painter.drawText(
+        QRectF(28, 143, 504, 26),
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        "Preparing your observer workspace",
+    )
+
+    painter.setPen(QColor("#4b5563"))
+    painter.setFont(QFont("Segoe UI", 10))
+    painter.drawText(
+        QRectF(28, 174, 504, 24),
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        "Broker state and local tools stay on this device.",
+    )
+
+    painter.setPen(QPen(QColor("#b8c9db"), 1))
+    painter.setBrush(QColor("#e7eff7"))
+    painter.drawRoundedRect(QRectF(28.5, 218.5, 503, 37), 5, 5)
+    painter.end()
+    return pixmap
+
+
+class StartupSplashScreen(QSplashScreen):
+    """Render startup progress in the same status treatment as the desktop UI."""
+
+    def drawContents(self, painter: QPainter) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#405d7a"))
+        painter.drawEllipse(QRectF(43, 233, 8, 8))
+
+        painter.setPen(QColor("#334e68"))
+        painter.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        painter.drawText(
+            QRectF(63, 219, 450, 37),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            self.message(),
+        )
 
 
 class App:
@@ -86,8 +187,8 @@ class App:
         if splash_screen is not None:
             splash_screen.showMessage(
                 message,
-                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
-                Qt.GlobalColor.white,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                QColor("#334e68"),
             )
             self._qt_application.processEvents()
 
@@ -115,33 +216,15 @@ def run() -> int:
 
     apply_light_theme(qt_application)
 
-    splash_pixmap = QPixmap(520, 220)
-    splash_pixmap.fill(QColor("#405d7a"))
-    painter = QPainter(splash_pixmap)
     logo = QPixmap(asset_path("icon.png"))
-    if not logo.isNull():
-        painter.drawPixmap(228, 24, 64, 64, logo)
-    painter.setPen(Qt.GlobalColor.white)
-    painter.setFont(QFont("Segoe UI", 24, QFont.Weight.DemiBold))
-    painter.drawText(0, 124, 520, 38, Qt.AlignmentFlag.AlignHCenter, "TopicGate")
-    painter.setFont(QFont("Segoe UI", 11))
-    painter.drawText(
-        0,
-        160,
-        520,
-        24,
-        Qt.AlignmentFlag.AlignHCenter,
-        "Secure local access to your MQTT topics",
-    )
-    painter.end()
-    splash_screen = QSplashScreen(
-        splash_pixmap,
+    splash_screen = StartupSplashScreen(
+        create_startup_pixmap(logo),
         Qt.WindowType.WindowStaysOnTopHint,
     )
     splash_screen.showMessage(
         "Starting TopicGate...",
-        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
-        Qt.GlobalColor.white,
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        QColor("#334e68"),
     )
     splash_screen.show()
     qt_application.processEvents()

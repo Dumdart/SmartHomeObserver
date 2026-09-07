@@ -4,6 +4,8 @@ from uuid import UUID
 
 from topicgate.core.models.health.condition import Condition
 from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import OutSideCondition
 from topicgate.core.models.health.expectation_target import BrokerTarget
 from topicgate.core.models.health.expectation_target import ExpectationTarget
 from topicgate.core.models.health.expectation_target import TopicTarget
@@ -75,42 +77,140 @@ class HealthExpectationMapper:
 
     @staticmethod
     def _condition_to_dict(condition: Condition) -> dict[str, Any]:
-        if not isinstance(condition, EqualCondition):
-            raise ValueError(
-                f"Unsupported expectation condition: {type(condition).__name__}"
+        if isinstance(condition, EqualCondition):
+            return HealthExpectationMapper._encode_condition_values(
+                "equal",
+                "expected_value",
+                (condition.expected_value,),
+                scalar=True,
             )
-        if isinstance(condition.expected_value, bytes):
-            return {
-                "kind": "equal",
-                "expected_value": base64.b64encode(
-                    condition.expected_value
-                ).decode("ascii"),
-                "value_type": "bytes",
-            }
-        if isinstance(condition.expected_value, str):
-            return {"kind": "equal", "expected_value": condition.expected_value}
-        raise ValueError("Equal condition expected value must be bytes or a string.")
+        if isinstance(condition, InRangeCondition):
+            return HealthExpectationMapper._encode_condition_values(
+                "in_range",
+                "expected_values",
+                condition.expected_values,
+            )
+        if isinstance(condition, OutSideCondition):
+            return HealthExpectationMapper._encode_condition_values(
+                "outside",
+                "expected_values",
+                condition.expected_values,
+            )
+        raise ValueError(
+            f"Unsupported expectation condition: {type(condition).__name__}"
+        )
 
     @staticmethod
     def _dict_to_condition(value: dict[str, Any]) -> Condition:
-        if value.get("kind") != "equal":
-            raise ValueError(
-                "Unsupported expectation condition kind: "
-                f"{value.get('kind')!r}"
+        if not isinstance(value, dict):
+            raise ValueError("Expectation condition must be an object.")
+
+        kind = value.get("kind")
+        if kind == "equal":
+            expected_values = HealthExpectationMapper._decode_condition_values(
+                value,
+                "expected_value",
+                scalar=True,
             )
-        expected_value = value.get("expected_value")
-        if value.get("value_type") == "bytes":
-            if not isinstance(expected_value, str):
-                raise ValueError("Encoded bytes condition value must be a string.")
+            return EqualCondition(expected_value=expected_values[0])
+        if kind == "in_range":
+            expected_values = HealthExpectationMapper._decode_condition_values(
+                value,
+                "expected_values",
+            )
+            return InRangeCondition(expected_values=expected_values)
+        if kind == "outside":
+            expected_values = HealthExpectationMapper._decode_condition_values(
+                value,
+                "expected_values",
+            )
+            return OutSideCondition(expected_values=expected_values)
+        raise ValueError(
+            "Unsupported expectation condition kind: "
+            f"{kind!r}"
+        )
+
+    @staticmethod
+    def _encode_condition_values(
+        kind: str,
+        field_name: str,
+        values: tuple[bytes | str, ...],
+        *,
+        scalar: bool = False,
+    ) -> dict[str, Any]:
+        if not values:
+            raise ValueError("Expectation condition values must not be empty.")
+        if any(type(value) is not type(values[0]) for value in values):
+            raise ValueError(
+                "Expectation condition values must have the same type."
+            )
+
+        encoded_values: list[str]
+        if isinstance(values[0], bytes):
+            encoded_values = [
+                base64.b64encode(value).decode("ascii")
+                for value in values
+            ]
+            result: dict[str, Any] = {
+                "kind": kind,
+                field_name: encoded_values[0] if scalar else encoded_values,
+                "value_type": "bytes",
+            }
+            return result
+        if isinstance(values[0], str):
+            return {
+                "kind": kind,
+                field_name: values[0] if scalar else list(values),
+            }
+        raise ValueError(
+            "Expectation condition values must be bytes or strings."
+        )
+
+    @staticmethod
+    def _decode_condition_values(
+        value: dict[str, Any],
+        field_name: str,
+        *,
+        scalar: bool = False,
+    ) -> tuple[bytes | str, ...]:
+        raw_values = value.get(field_name)
+        if scalar:
+            if not isinstance(raw_values, str):
+                raise ValueError(
+                    f"Expectation {field_name} must be a string."
+                )
+            raw_items = (raw_values,)
+        else:
+            if not isinstance(raw_values, list) or not raw_values:
+                raise ValueError(
+                    f"Expectation {field_name} must be a non-empty list."
+                )
+            raw_items = tuple(raw_values)
+
+        value_type = value.get("value_type")
+        if value_type == "bytes":
+            if not all(isinstance(item, str) for item in raw_items):
+                raise ValueError(
+                    f"Encoded bytes in {field_name} must be strings."
+                )
             try:
-                expected_value = base64.b64decode(expected_value, validate=True)
+                return tuple(
+                    base64.b64decode(item, validate=True)
+                    for item in raw_items
+                )
             except ValueError as error:
                 raise ValueError(
-                    "Encoded bytes condition value is invalid."
+                    f"Encoded bytes in {field_name} are invalid."
                 ) from error
-        elif not isinstance(expected_value, str):
-            raise ValueError("Equal condition expected value must be a string.")
-        return EqualCondition(expected_value=expected_value)
+        if value_type is not None:
+            raise ValueError(
+                f"Unsupported expectation condition value type: {value_type!r}"
+            )
+        if not all(isinstance(item, str) for item in raw_items):
+            raise ValueError(
+                f"Expectation {field_name} values must be strings."
+            )
+        return tuple(raw_items)
 
     @staticmethod
     def _required_uuid(value: dict[str, Any], field_name: str) -> UUID:
