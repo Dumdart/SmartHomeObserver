@@ -506,6 +506,7 @@ def test_settings_button_reveals_subscription_and_expectation_settings() -> None
     assert edit_button.text() == "Settings"
     assert context.findChild(QWidget, "topicExpectationEditor") is not None
     assert context.findChild(QWidget, "topicPublishPane") is None
+    assert context.findChild(QPushButton, "revertSubscriptionButton") is None
 
     edit_button.click()
 
@@ -1122,9 +1123,18 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     assert window.findChild(QMenu, "connectionMenu") is None
     assert [action.text() for action in window.menuBar().actions()] == [
         "&File",
+        "Stored observations",
+        "Broker health",
         "&View",
         "&Help",
     ]
+    file_action = window.menuBar().actions()[0]
+    file_menu = file_action.menu()
+    assert file_menu is not None
+    assert window.findChild(QAction, "storedObservationsAction") not in (
+        file_menu.actions()
+    )
+    assert window.findChild(QAction, "healthAction") not in file_menu.actions()
 
     assert window.menuBar().cornerWidget(Qt.Corner.TopRightCorner) is None
     window.close()

@@ -18,7 +18,7 @@ from topicgate.core.models.subscription import Subscription
 
 
 class SubscriptionSettingsPane(QWidget):
-    """Explicit Apply/Revert editor for the selected subscription filter."""
+    """Explicit Apply editor for the selected subscription filter."""
 
     apply_requested = Signal(str, object)
 
@@ -67,14 +67,10 @@ class SubscriptionSettingsPane(QWidget):
         self.content_layout.addStretch(1)
         buttons = QHBoxLayout()
         buttons.addStretch(1)
-        self._revert_button = QPushButton("Revert")
-        self._revert_button.setObjectName("revertSubscriptionButton")
         self._apply_button = QPushButton("Apply")
         self._apply_button.setObjectName("applySubscriptionButton")
         self._apply_button.setDefault(True)
-        self._revert_button.clicked.connect(self.revert)
         self._apply_button.clicked.connect(self._apply)
-        buttons.addWidget(self._revert_button)
         buttons.addWidget(self._apply_button)
         self.content_layout.addLayout(buttons)
 
@@ -106,9 +102,6 @@ class SubscriptionSettingsPane(QWidget):
         self._retain_as_published.setChecked(subscription.retain_as_published)
         self._retain_handling.setCurrentIndex(subscription.retain_handling)
 
-    def revert(self) -> None:
-        self.render(self._selected_topic, self._subscription)
-
     def _apply(self) -> None:
         if self._subscription is None:
             return
@@ -131,7 +124,6 @@ class SubscriptionSettingsPane(QWidget):
             self._retain_as_published,
             self._retain_handling,
             self._apply_button,
-            self._revert_button,
         ):
             widget.setEnabled(enabled)
 

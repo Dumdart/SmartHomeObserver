@@ -283,7 +283,7 @@ class MainWindow(QMainWindow):
         self._console_action.setCheckable(True)
 
         self._stored_observations_action = QAction(
-            "Stored observations…",
+            "Stored observations",
             self,
         )
         self._stored_observations_action.setObjectName(
@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
             self._show_stored_observations
         )
 
-        self._health_action = QAction("Broker health...", self)
+        self._health_action = QAction("Broker health", self)
         self._health_action.setObjectName("healthAction")
         self._health_action.setShortcut("Ctrl+Shift+H")
         self._health_action.triggered.connect(self._show_health)
@@ -323,10 +323,10 @@ class MainWindow(QMainWindow):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._add_filter_action)
         file_menu.addSeparator()
-        file_menu.addAction(self._stored_observations_action)
-        file_menu.addAction(self._health_action)
-        file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
+
+        self.menuBar().addAction(self._stored_observations_action)
+        self.menuBar().addAction(self._health_action)
 
         self._view_menu: QMenu = self.menuBar().addMenu("&View")
         self._view_menu.addAction(self._expand_action)

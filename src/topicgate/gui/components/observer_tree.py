@@ -182,7 +182,7 @@ class ObserverTreePane(WorkspacePane):
             )
         elif query_is_filtered and not has_topics:
             message, action, label = (
-                "No values match the active filters. Clear filters or capture a new snapshot.",
+                "No values match the current snapshot filters. Clear filters or capture a new snapshot.",
                 "clear-filters",
                 "Clear filters",
             )
