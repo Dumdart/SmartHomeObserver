@@ -10,19 +10,21 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from topicgate.core.models.subscription import Subscription
-from topicgate.gui.components.workspace_pane import WorkspacePane
 
 
-class SubscriptionSettingsPane(WorkspacePane):
+class SubscriptionSettingsPane(QWidget):
     """Explicit Apply/Revert editor for the selected subscription filter."""
 
     apply_requested = Signal(str, object)
 
     def __init__(self) -> None:
-        super().__init__("Settings", minimum_hint_width=220)
+        super().__init__()
+        self.content_layout = QVBoxLayout(self)
         self.content_layout.setSizeConstraint(
             QLayout.SizeConstraint.SetNoConstraint
         )

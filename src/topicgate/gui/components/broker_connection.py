@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.models.broker_summary import BrokerSummary
-from topicgate.gui.components.workspace_pane import WorkspacePane
+from topicgate.gui.components.workspace_pane import (
+    WORKSPACE_CONTROL_HEIGHT,
+    WorkspacePane,
+)
 from topicgate.gui.icons import delete_icon, edit_icon
 from topicgate.gui.main_view_model import MainViewModel
 
@@ -186,7 +189,7 @@ class BrokerProfileSelector(QComboBox):
 
 
 class BrokerConnectionPane(WorkspacePane):
-    """Keep broker selection and connection actions beside topic details."""
+    """Keep broker selection and connection actions above the observer tree."""
 
     broker_selected = Signal(object)
     edit_profile_requested = Signal(object)
@@ -229,6 +232,7 @@ class BrokerConnectionPane(WorkspacePane):
         row.setSpacing(8)
         self._profile_selector = BrokerProfileSelector()
         self._profile_selector.setObjectName("connectionBrokerSelector")
+        self._profile_selector.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._profile_selector.setAccessibleName("Active broker profile")
         self._profile_selector.setMinimumWidth(160)
         self._profile_selector.currentIndexChanged.connect(
@@ -246,11 +250,13 @@ class BrokerConnectionPane(WorkspacePane):
 
         self._disconnect_button = QPushButton("Disconnect")
         self._disconnect_button.setObjectName("brokerDisconnectButton")
+        self._disconnect_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._disconnect_button.clicked.connect(
             self.disconnect_requested.emit
         )
         self._lifecycle_button = QPushButton("Connect")
         self._lifecycle_button.setObjectName("brokerLifecycleButton")
+        self._lifecycle_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._lifecycle_button.setProperty("primary", True)
         self._lifecycle_button.clicked.connect(self._request_lifecycle_operation)
 

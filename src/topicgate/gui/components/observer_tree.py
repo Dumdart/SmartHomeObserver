@@ -170,31 +170,31 @@ class ObserverTreePane(WorkspacePane):
             return
         if not subscriptions:
             message, action, label = (
-                "No subscriptions are configured. Add a filter before TopicGate can observe values.",
+                "No subscriptions. Add a filter to observe values.",
                 "add-filter",
                 "Add filter",
             )
         elif connection_status == "disconnected":
             message, action, label = (
-                "The active broker is disconnected. Cached values may be old until you reconnect.",
+                "Broker disconnected. Stored values may be stale.",
                 "connect",
                 "Connect",
             )
         elif query_is_filtered and not has_topics:
             message, action, label = (
-                "No values match the current snapshot filters. Clear filters or capture a fresh snapshot.",
+                "No values match the active filters. Clear filters or capture a new snapshot.",
                 "clear-filters",
                 "Clear filters",
             )
         elif has_cached_values:
             message, action, label = (
-                "Only persisted values are available. Their source and age are shown in Details; reconnect to collect fresh values.",
+                "Showing stored values only. Reconnect to fetch current values.",
                 "observe",
                 "Reconnect & observe",
             )
         else:
             message, action, label = (
-                "No values have been observed yet. Capture a fresh snapshot after publishers send messages.",
+                "No values observed yet. Capture a snapshot after publishers send messages.",
                 "observe",
                 "Reconnect & observe",
             )

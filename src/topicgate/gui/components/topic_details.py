@@ -2,6 +2,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QHeaderView,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QTabBar,
@@ -14,7 +15,10 @@ from PySide6.QtWidgets import (
 
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.components.publish_pane import PublishPane
-from topicgate.gui.components.workspace_pane import WorkspacePane
+from topicgate.gui.components.workspace_pane import (
+    WORKSPACE_CONTROL_HEIGHT,
+    WorkspacePane,
+)
 from topicgate.gui.components.topic_metadata import TopicMetadataPane
 from topicgate.gui.icons import edit_icon
 
@@ -37,6 +41,7 @@ class TopicDetailsPane(WorkspacePane):
 
         self._edit_button = QToolButton()
         self._edit_button.setObjectName("topicEditButton")
+        self._edit_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._edit_button.setIcon(edit_icon())
         self._edit_button.setIconSize(QSize(14, 14))
         self._edit_button.setToolButtonStyle(
@@ -47,17 +52,21 @@ class TopicDetailsPane(WorkspacePane):
         self._edit_button.setAccessibleName("Topic settings")
         self._edit_button.setToolTip("Show subscription and expectation settings")
         self._edit_button.toggled.connect(self._toggle_subscription_editing)
-        self.header_layout.addWidget(self._edit_button)
-
         self._mode_tabs = QTabBar()
         self._mode_tabs.setObjectName("topicDetailsMode")
+        self._mode_tabs.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._mode_tabs.setAccessibleName("Topic details mode")
         self._mode_tabs.setDrawBase(False)
         self._mode_tabs.setExpanding(True)
         self._mode_tabs.addTab("Payload")
         self._mode_tabs.addTab("Publish")
         self._mode_tabs.currentChanged.connect(self._set_mode)
-        self.content_layout.addWidget(self._mode_tabs)
+        mode_layout = QHBoxLayout()
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(8)
+        mode_layout.addWidget(self._mode_tabs, 1)
+        mode_layout.addWidget(self._edit_button)
+        self.content_layout.addLayout(mode_layout)
 
         self._payload_content = QWidget()
         self._payload_content.setObjectName("topicPayloadContent")

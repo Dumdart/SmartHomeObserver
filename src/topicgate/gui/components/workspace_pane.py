@@ -6,7 +6,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QSizePolicy,
     QVBoxLayout,
+    QWidget,
 )
+
+
+WORKSPACE_CONTROL_HEIGHT = 32
+WORKSPACE_HEADER_HEIGHT = 24
 
 
 class WorkspacePane(QFrame):
@@ -27,7 +32,11 @@ class WorkspacePane(QFrame):
         )
 
         self.content_layout = QVBoxLayout(self)
-        self.header_layout = QHBoxLayout()
+        self.header = QWidget()
+        self.header.setObjectName("workspaceHeader")
+        self.header.setFixedHeight(WORKSPACE_HEADER_HEIGHT)
+        self.header_layout = QHBoxLayout(self.header)
+        self.header_layout.setContentsMargins(0, 0, 0, 0)
         self.heading = QLabel(title)
         self.heading.setObjectName("workspaceHeading")
         self.heading.setTextFormat(Qt.TextFormat.PlainText)
@@ -41,7 +50,7 @@ class WorkspacePane(QFrame):
         self.heading.installEventFilter(self)
         self._heading_text = title
         self.header_layout.addWidget(self.heading, 1)
-        self.content_layout.addLayout(self.header_layout)
+        self.content_layout.addWidget(self.header)
 
     def minimumSizeHint(self) -> QSize:
         hint = super().minimumSizeHint()

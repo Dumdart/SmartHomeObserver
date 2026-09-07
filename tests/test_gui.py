@@ -118,6 +118,10 @@ def test_settings_and_health_tabs_reuse_visible_topic_tab_style() -> None:
     assert settings_tabs is not None
     assert settings_tabs.tabBar().objectName() == "topicSettingsTabs"
     assert settings_tabs.tabBar().expanding()
+    window.findChild(QToolButton, "topicEditButton").click()
+    window.show()
+    application.processEvents()
+    assert settings_tabs.tabBar().width() == settings_tabs.contentsRect().width()
 
     action = window.findChild(QAction, "healthAction")
     assert action is not None
@@ -416,7 +420,7 @@ async def test_cache_deletion_confirmation_reports_partial_inactive_result() -> 
     application.processEvents()
 
 
-def test_window_keeps_broker_switching_above_topic_details() -> None:
+def test_window_keeps_broker_switching_above_observer_tree() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
     view_model = MainViewModel(runtime_for(repository), repository.state.topic)
@@ -433,13 +437,17 @@ def test_window_keeps_broker_switching_above_topic_details() -> None:
     assert window.findChild(QTabBar, "workspaceNavigation") is None
     assert window.findChild(QWidget, "workspaceStack") is None
     inspector = window.findChild(QWidget, "topicInspector")
+    observer_workspace = window.findChild(QWidget, "observerWorkspace")
     broker = window.findChild(QWidget, "brokerConnectionPane")
     selector = window.findChild(QComboBox, "connectionBrokerSelector")
     assert inspector is not None
+    assert observer_workspace is not None
     assert broker is not None
     assert selector is not None
-    assert inspector.layout().indexOf(broker) == 0
-    assert inspector.layout().indexOf(window._topic_details) == 1
+    assert observer_workspace.layout().indexOf(broker) == 0
+    assert observer_workspace.layout().indexOf(window._observer_tree) == 1
+    assert inspector.layout().indexOf(window._topic_details) == 0
+    assert inspector.layout().indexOf(broker) == -1
     assert selector.currentText() == "Default"
     assert [selector.itemText(index) for index in range(selector.count())] == [
         "Default",
@@ -503,6 +511,48 @@ def test_settings_button_reveals_subscription_and_expectation_settings() -> None
 
     assert context.isHidden()
     assert edit_button.text() == "Settings"
+    window.close()
+    application.processEvents()
+
+
+def test_workspace_headers_and_primary_controls_share_rows() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    settings = QSettings(
+        str(Path(".pytest_cache/workspace-alignment.ini").resolve()),
+        QSettings.Format.IniFormat,
+    )
+    settings.clear()
+    window = MainWindow(
+        MainViewModel(runtime_for(repository), repository.state.topic),
+        settings,
+    )
+    window.findChild(QToolButton, "topicEditButton").click()
+    window.show()
+    application.processEvents()
+
+    headers = (
+        window._broker_connection.header,
+        window._topic_details.header,
+        window._context_panel.header,
+    )
+    controls = (
+        window.findChild(QComboBox, "connectionBrokerSelector"),
+        window.findChild(QTabBar, "topicDetailsMode"),
+        window.findChild(QToolButton, "topicEditButton"),
+        window._settings_tabs.tabBar(),
+    )
+
+    assert len(
+        {widget.mapToGlobal(widget.rect().topLeft()).y() for widget in headers}
+    ) == 1
+    assert len({widget.height() for widget in headers}) == 1
+    assert len(
+        {widget.mapToGlobal(widget.rect().topLeft()).y() for widget in controls}
+    ) == 1
+    assert len({widget.height() for widget in controls}) == 1
+    assert all(widget.height() >= widget.sizeHint().height() for widget in controls)
+
     window.close()
     application.processEvents()
 

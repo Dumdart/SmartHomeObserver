@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from PySide6.QtCore import QByteArray, QSettings, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
@@ -38,11 +38,21 @@ from topicgate.gui.components.stored_observations_dialog import (
     StoredObservationsDialog,
 )
 from topicgate.gui.components.topic_details import TopicDetailsPane
+from topicgate.gui.components.workspace_pane import (
+    WORKSPACE_CONTROL_HEIGHT,
+    WorkspacePane,
+)
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.settings_migration import migrate_legacy_settings
 from topicgate.gui.theme import LIGHT_THEME
 from topicgate.presentation.snapshot_presentation import SnapshotQuery
 from topicgate.paths import asset_path
+
+
+class _FullWidthTabWidget(QTabWidget):
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.tabBar().setFixedWidth(self.contentsRect().width())
 
 
 class MainWindow(QMainWindow):
@@ -141,31 +151,38 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self._context_panel = QWidget()
+        self._context_panel = WorkspacePane(
+            "Settings",
+            minimum_hint_width=220,
+        )
         self._context_panel.setObjectName("contextPanel")
-        context_layout = QVBoxLayout(self._context_panel)
-        context_layout.setContentsMargins(0, 0, 0, 0)
-        context_layout.setSpacing(8)
-        self._settings_tabs = QTabWidget()
+        self._settings_tabs = _FullWidthTabWidget()
         self._settings_tabs.setObjectName("topicSettingsTabs")
         self._settings_tabs.tabBar().setObjectName("topicSettingsTabs")
         self._settings_tabs.tabBar().setExpanding(True)
+        self._settings_tabs.tabBar().setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._settings_tabs.addTab(self._subscription_settings, "Subscription")
         self._settings_tabs.addTab(self._topic_expectations, "Expectations")
-        context_layout.addWidget(self._settings_tabs)
+        self._context_panel.content_layout.addWidget(self._settings_tabs)
+
+        self._observer_workspace = QWidget()
+        self._observer_workspace.setObjectName("observerWorkspace")
+        observer_layout = QVBoxLayout(self._observer_workspace)
+        observer_layout.setContentsMargins(0, 0, 0, 0)
+        observer_layout.setSpacing(8)
+        observer_layout.addWidget(self._broker_connection)
+        observer_layout.addWidget(self._observer_tree, 1)
 
         self._topic_inspector = QWidget()
         self._topic_inspector.setObjectName("topicInspector")
         inspector_layout = QVBoxLayout(self._topic_inspector)
         inspector_layout.setContentsMargins(0, 0, 0, 0)
-        inspector_layout.setSpacing(8)
-        inspector_layout.addWidget(self._broker_connection)
-        inspector_layout.addWidget(self._topic_details, 1)
+        inspector_layout.addWidget(self._topic_details)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setObjectName("workspaceSplitter")
         self._splitter.setChildrenCollapsible(False)
-        self._splitter.addWidget(self._observer_tree)
+        self._splitter.addWidget(self._observer_workspace)
         self._splitter.addWidget(self._topic_inspector)
         self._splitter.addWidget(self._context_panel)
         self._splitter.setStretchFactor(0, 4)
