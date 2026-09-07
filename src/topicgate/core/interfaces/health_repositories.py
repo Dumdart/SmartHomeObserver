@@ -8,7 +8,9 @@ from topicgate.core.models.health import HealthExpectation
 
 
 class HealthExpectationReader(Protocol):
-    def get(self, expectation_id: UUID) -> HealthExpectation | None: ...
+    def get(
+        self, expectation_id: UUID, *, transaction: object | None = None
+    ) -> HealthExpectation | None: ...
 
     def list_all(self) -> tuple[HealthExpectation, ...]: ...
 
@@ -22,12 +24,19 @@ class HealthExpectationReader(Protocol):
 
     def create(self, expectation: HealthExpectation) -> HealthExpectation: ...
 
-    def update(self, expectation: HealthExpectation) -> HealthExpectation: ...
+    def update(
+        self, expectation: HealthExpectation, *, transaction: object | None = None
+    ) -> HealthExpectation: ...
 
     def patch(self, expectation_id: UUID, updates: dict) -> HealthExpectation: ...
 
-    def delete(self, expectation_id: UUID, *, retain_history: bool = False) -> None: ...
-
+    def delete(
+        self,
+        expectation_id: UUID,
+        *,
+        retain_history: bool = False,
+        transaction: object | None = None,
+    ) -> None: ...
 
 
 class ExpectationStateStore(Protocol):

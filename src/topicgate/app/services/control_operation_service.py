@@ -117,6 +117,26 @@ class ControlOperationService:
             f"(lease expires in at most {remaining:.0f} seconds)."
         )
 
+    def check_ownership(self) -> None:
+        """Fail if a long operation lost its lease or configuration generation."""
+        token = self._token.get()
+        with self._database.session() as session:
+            owned = session.execute(
+                text("SELECT token, expires_at FROM control_operation_lease WHERE id = 1")
+            ).first()
+            generation = session.execute(
+                text("SELECT generation FROM control_operation_state WHERE id = 1")
+            ).scalar_one()
+        if (
+            owned is None
+            or owned.token != token
+            or owned.expires_at <= time.time()
+            or generation != self._seen_generation
+        ):
+            raise ControlOperationConflict(
+                "Control lease or configuration changed during the operation."
+            )
+
     def _renew_until_stopped(
         self,
         name: str,

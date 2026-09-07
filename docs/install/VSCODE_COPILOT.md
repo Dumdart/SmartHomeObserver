@@ -38,3 +38,5 @@ Create `.vscode/mcp.json`:
 ```
 
 Use `--mode control` only in a trusted workspace. Control mode can change connections, subscriptions, observations, and device state.
+
+For profile provisioning and health expectations, see [Control mode and health verification](CONTROL_AND_HEALTH.md), including restart, tool-exposure checks, and credential limitations.

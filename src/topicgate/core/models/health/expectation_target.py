@@ -18,11 +18,8 @@ class BrokerTarget(ExpectationTarget):
 class TopicTarget(ExpectationTarget):
     def __init__(self, broker_id: UUID, topic: str) -> None:
         self.broker_id = broker_id
-        try:
-            validate_topic_name(topic)
-            self.topic = topic
-        except Exception as error:
-            assert f"Invalid topic. Exception: {error}"
+        validate_topic_name(topic)
+        self.topic = topic
 
     broker_id: UUID
     topic: str

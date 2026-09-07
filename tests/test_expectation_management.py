@@ -254,3 +254,29 @@ def test_unobservable_rule_is_reported_unknown_without_deleting_it(tmp_path) -> 
         assert expectations.get(item.expectation_id) is not None
     finally:
         database.dispose()
+
+
+@pytest.mark.parametrize("operation", ["edit", "delete"])
+def test_failed_definition_write_rolls_back_incident_changes(tmp_path, monkeypatch, operation):
+    broker_id = uuid4()
+    database, expectations, states, failures, management, pipeline = _components(
+        tmp_path, (Subscription("devices/#"),)
+    )
+    item = _expectation(broker_id)
+    try:
+        management.create_expectation(item)
+        pipeline.evaluate_observation(_message(broker_id))
+        previous_state = states.get(item.expectation_id)
+        def fail(*args, **kwargs):
+            raise RuntimeError("Simulated definition write failure")
+        monkeypatch.setattr(expectations, "update" if operation == "edit" else "delete", fail)
+        with pytest.raises(RuntimeError, match="Simulated"):
+            if operation == "edit":
+                management.edit_expectation(item.expectation_id, new_condition=EqualCondition(b"offline"))
+            else:
+                management.delete_expectation(item.expectation_id)
+        assert expectations.get(item.expectation_id) == item
+        assert states.get(item.expectation_id) == previous_state
+        assert failures.get(previous_state.active_failure_id).recovered_at is None
+    finally:
+        database.dispose()

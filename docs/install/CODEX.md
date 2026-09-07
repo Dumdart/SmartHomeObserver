@@ -24,3 +24,5 @@ codex mcp add topicgate-control -- topicgate --mode control
 ```
 
 Control mode can change connections, subscriptions, observations, and device state. Confirm publish details before use.
+
+For profile provisioning and health expectations, see [Control mode and health verification](CONTROL_AND_HEALTH.md), including restart, tool-exposure checks, and credential limitations.

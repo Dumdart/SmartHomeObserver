@@ -1,4 +1,7 @@
+from contextlib import nullcontext
 from uuid import UUID
+
+from sqlalchemy.orm import Session
 
 from sqlalchemy import select
 
@@ -20,8 +23,10 @@ class HealthExpectationRepository:
     def __init__(self, db: DatabaseContext) -> None:
         self._db = db
 
-    def get(self, expectation_id: UUID) -> HealthExpectation | None:
-        with self._db.session() as session:
+    def get(
+        self, expectation_id: UUID, *, transaction: object | None = None
+    ) -> HealthExpectation | None:
+        with self._scope(transaction, write=False) as session:
             row = session.get(HealthExpectationRow, expectation_id)
             return None if row is None else HealthExpectationMapper.to_model(row)
 
@@ -70,8 +75,10 @@ class HealthExpectationRepository:
             session.merge(HealthExpectationMapper.to_row(expectation))
         return expectation
 
-    def update(self, expectation: HealthExpectation) -> HealthExpectation:
-        with self._db.transaction() as session:
+    def update(
+        self, expectation: HealthExpectation, *, transaction: object | None = None
+    ) -> HealthExpectation:
+        with self._scope(transaction) as session:
             row = session.get(HealthExpectationRow, expectation.expectation_id)
             if row is None:
                 raise KeyError(
@@ -80,8 +87,14 @@ class HealthExpectationRepository:
             session.merge(HealthExpectationMapper.to_row(expectation))
         return expectation
 
-    def delete(self, expectation_id: UUID, *, retain_history: bool = False) -> None:
-        with self._db.transaction() as session:
+    def delete(
+        self,
+        expectation_id: UUID,
+        *,
+        retain_history: bool = False,
+        transaction: object | None = None,
+    ) -> None:
+        with self._scope(transaction) as session:
             row = session.get(HealthExpectationRow, expectation_id)
             if row is None:
                 raise KeyError(f"Unknown health expectation: {expectation_id}")
@@ -99,3 +112,12 @@ class HealthExpectationRepository:
             for key, value in updates.items():
                 setattr(row, key, value)
         return HealthExpectationMapper.to_model(row)
+
+    def _scope(self, transaction: object | None, *, write: bool = True):
+        if transaction is not None:
+            if not isinstance(transaction, Session):
+                raise TypeError(
+                    "Health repository transaction must be a SQLAlchemy Session."
+                )
+            return nullcontext(transaction)
+        return self._db.transaction() if write else self._db.session()

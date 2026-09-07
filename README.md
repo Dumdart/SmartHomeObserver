@@ -51,7 +51,7 @@ If `topicgate` is not on the host's `PATH`, use the absolute executable path sho
 
 ## Connect an agent
 
-Configure a broker in TopicGate Desktop before connecting an agent.
+Configure a broker in TopicGate Desktop for read-only use, or use the authorized [control provisioning and health workflow](docs/install/CONTROL_AND_HEALTH.md).
 
 | Host | Guide |
 | --- | --- |

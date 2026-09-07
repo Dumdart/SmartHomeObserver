@@ -23,6 +23,7 @@ from topicgate.core.models.health import (
     HealthExpectation,
     HealthStatus,
     TopicTarget,
+    DiagnosticReport,
 )
 
 
@@ -58,6 +59,13 @@ class HealthQueryService:
             broker_id,
             stale_after_seconds=stale_after_seconds,
         )
+        return self.present_report(report, limit=limit)
+
+    def present_report(
+        self, report: DiagnosticReport, *, limit: int = DEFAULT_HEALTH_RESULT_LIMIT
+    ) -> ExpectationHealthReport:
+        limit = _validate_limit(limit)
+        broker_id = report.broker_id
         expectations = {
             item.expectation_id: item
             for item in self._expectation_management.list_expectations(broker_id)

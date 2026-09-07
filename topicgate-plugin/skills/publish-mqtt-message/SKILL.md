@@ -7,7 +7,7 @@ description: Safely publish an MQTT message only through an explicitly configure
 
 `publish` requires `--mode control`. If unavailable, stop and explain how to enable control mode; do not substitute another tool.
 
-Before calling, explicitly confirm:
+Require the following explicit inputs; reuse authorization already supplied and ask only for missing or ambiguous values:
 
 - `broker_id`: UUID or unique broker name.
 - `topic`: exact topic, never a wildcard.

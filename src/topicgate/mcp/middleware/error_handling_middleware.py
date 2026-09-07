@@ -3,6 +3,9 @@ import logging
 from fastmcp.exceptions import ToolError, ValidationError
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
+from topicgate.app.services.control_operation_service import ControlOperationConflict
+from topicgate.app.services.broker_resolver import BrokerNotFoundError
+
 
 error_logger = logging.getLogger("topicgate.mcp.errors")
 
@@ -33,6 +36,8 @@ class ErrorHandlingMiddleware(Middleware):
 
     @staticmethod
     def _client_message(error: Exception) -> str | None:
+        if isinstance(error, (ControlOperationConflict, BrokerNotFoundError)):
+            return str(error)
         if isinstance(error, (ToolError, ValidationError)):
             return str(error)
         if isinstance(error, KeyError):

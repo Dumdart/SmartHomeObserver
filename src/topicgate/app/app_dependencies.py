@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from topicgate.app.services.broker_health_monitor import BrokerHealthMonitor
+from topicgate.app.services.broker_health_wait_service import BrokerHealthWaitService
 from topicgate.app.services.expectation_management_service import (
     ExpectationManagementService,
 )
@@ -142,6 +143,7 @@ class AppDependencies:
             expectation_state_repository=self.expectation_state_repo,
             expectation_failure_repository=self.expectation_failure_repo,
             transaction_manager=self._db_context,
+            control_operation=self.control_operations.operation,
             subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
                 broker_id
             ).workspace.subscriptions,
@@ -185,6 +187,10 @@ class AppDependencies:
             control_operations=self.control_operations,
         )
         self.broker_resolver = BrokerResolver(self.runtime)
+        self.health_wait_service = BrokerHealthWaitService(
+            self.runtime, self.expectation_management_service,
+            self.health_sink, self.health_query_service,
+        )
         self.snapshot_service = BrokerSnapshotService(
             self.runtime,
             resolver=self.broker_resolver,

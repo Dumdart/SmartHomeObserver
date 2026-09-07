@@ -443,6 +443,10 @@ class TopicGateRuntime(ServiceItem):
             return nullcontext()
         return self._control_operations.operation(name)
 
+    def check_control_ownership(self) -> None:
+        if self._control_operations is not None:
+            self._control_operations.check_ownership()
+
     def _persist_active_subscriptions(self) -> None:
         workspace_id = self._get_broker_profile().workspace_id
         self._brokers.replace_subscriptions(

@@ -121,10 +121,13 @@ class HealthExpectationService:
         *,
         stale_after_seconds: float = DEFAULT_STALE_AFTER_SECONDS,
         evaluated_at: datetime | None = None,
+        deadline_check: Callable[[], None] | None = None,
     ) -> DiagnosticReport:
         """Evaluate broker lifecycle health independently of message delivery."""
         stale_after_seconds = _validate_stale_after(stale_after_seconds)
         evaluated_at = _as_utc(evaluated_at or datetime.now(timezone.utc))
+        if deadline_check is not None:
+            deadline_check()
         metadata = self._require_broker_metadata_reader()(broker_id)
         current_topics = {
             current.message.topic: current
@@ -144,6 +147,8 @@ class HealthExpectationService:
 
         topic_findings: list[ExpectationEvaluation] = []
         for expectation in expectations:
+            if deadline_check is not None:
+                deadline_check()
             try:
                 result = self._scheduled_condition_result(
                     expectation,
@@ -172,6 +177,7 @@ class HealthExpectationService:
                             expectation,
                             result,
                             evaluated_at,
+                            count_occurrence=False,
                         )
                         if persist_result
                         else self._condition_result_to_evaluation(
@@ -187,6 +193,8 @@ class HealthExpectationService:
                     expectation.expectation_id,
                 )
 
+        if deadline_check is not None:
+            deadline_check()
         statuses = [observation_health.status]
         statuses.extend(finding.status for finding in topic_findings)
         return DiagnosticReport(
@@ -244,6 +252,8 @@ class HealthExpectationService:
         expectation: HealthExpectation,
         result: ConditionResult,
         evaluated_at: datetime,
+        *,
+        count_occurrence: bool = True,
     ) -> ExpectationEvaluation:
         evaluation = self._condition_result_to_evaluation(
             result,
@@ -279,6 +289,7 @@ class HealthExpectationService:
                 state,
                 transition,
                 transaction=transaction,
+                count_occurrence=count_occurrence,
             )
             if failure is not None:
                 self._failure_repo.upsert(failure, transaction=transaction)
@@ -528,6 +539,7 @@ class HealthExpectationService:
         transition: HealthTransition | None,
         *,
         transaction: object,
+        count_occurrence: bool = True,
     ) -> ExpectationFailure | None:
         if transition is HealthTransition.NEW_FAILURE:
             if state.active_failure_id is None:
@@ -563,7 +575,7 @@ class HealthExpectationService:
             return replace(
                 failure,
                 last_seen_at=evaluation.evaluated_at,
-                occurrence_count=failure.occurrence_count + 1,
+                occurrence_count=failure.occurrence_count + int(count_occurrence),
                 expected_revision=evaluation.expectation_revision,
                 failure_code=evaluation.failure_code,
                 evidence_summary=evaluation.evidence_summary,
