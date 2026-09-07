@@ -25,3 +25,28 @@ The tested final result has `outcome: satisfied`, `scope: whole_broker`, `domain
 For an explicitly requested topic value, use target `{"kind":"topic","topic":"devices/status"}` and condition `{"kind":"equal","expected":{"encoding":"utf8","value":"online"}}` after a covering subscription exists. Do not publish to make it pass. Missing traffic times out with unknown/incomplete evidence; retained delivery does not establish publisher liveness. Use an explicitly requested freshness age when needed.
 
 See the [plugin contract](../../topicgate-plugin/CONTRACT.md) for transaction semantics, retry/partial persistence, wait limits and synchronous storage cancellation limitations.
+
+## Define checks in Desktop
+
+Open **Health → Expectations** to configure a broker connection check. For a concrete topic, select it in the observer tree and open **Settings → Expectations**. Add a covering subscription before creating a topic expectation. The overview shows the evaluation result and evidence; history records failure episodes when the storage action is enabled.
+
+![Sample broker expectation editor showing the connected condition and history actions.](../images/desktop-expectations.png)
+
+*Sample configuration in Desktop; these screenshots are UI examples, not a live assessment of your broker.*
+
+## Interpret a health wait
+
+The default wait is 30 seconds, with a maximum of 60 seconds. It uses the existing active connection and leaves that broker active. Set `stable_for_seconds` when the requested checks must stay healthy for an interval, rather than pass at a single evaluation.
+
+| Outcome | Meaning and next step |
+| --- | --- |
+| `satisfied` | The requested expectations passed with complete evidence. Check `scope`: a selected subset can pass while other broker checks fail. |
+| `timed_out` | The criteria did not pass within the window. Inspect the timestamp and final report for failed, unknown, or missing evidence before deciding whether to wait again. |
+| `disconnected` | The connection is unavailable. Diagnose it and explicitly reconnect before retrying. |
+| `configuration_changed` | The broker, subscriptions, or expectations changed during verification. Inspect the current configuration before starting another wait. |
+
+An empty or all-disabled expectation set cannot satisfy verification. Invalid bounds, missing IDs, lease conflicts, and storage errors are tool errors rather than health outcomes. Check the whole-broker report, evidence completeness, and omitted findings even when verifying a subset. A final report may be unavailable if no evaluation completed before the deadline.
+
+![Sample health overview with failed and unknown checks and their evidence.](../images/desktop-health.png)
+
+*Connection state and expectation health are separate. Limited observations can leave a check unknown even while the connection is established.*
