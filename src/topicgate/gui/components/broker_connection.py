@@ -2,6 +2,7 @@ from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
     QComboBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -13,7 +14,10 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.models.broker_summary import BrokerSummary
-from topicgate.gui.components.workspace_pane import WorkspacePane
+from topicgate.gui.components.workspace_pane import (
+    WORKSPACE_CONTROL_HEIGHT,
+    WorkspacePane,
+)
 from topicgate.gui.icons import delete_icon, edit_icon
 from topicgate.gui.main_view_model import MainViewModel
 
@@ -186,7 +190,7 @@ class BrokerProfileSelector(QComboBox):
 
 
 class BrokerConnectionPane(WorkspacePane):
-    """Keep broker selection and connection actions beside topic details."""
+    """Keep broker selection and connection actions above the observer tree."""
 
     broker_selected = Signal(object)
     edit_profile_requested = Signal(object)
@@ -195,6 +199,8 @@ class BrokerConnectionPane(WorkspacePane):
     connect_requested = Signal()
     reconnect_requested = Signal()
     disconnect_requested = Signal()
+    inspect_snapshot_requested = Signal()
+    health_requested = Signal()
 
     _STATUS_LABELS = {
         "connected": "Connected",
@@ -225,10 +231,13 @@ class BrokerConnectionPane(WorkspacePane):
         self.header_layout.addWidget(self._status_badge)
         self.header_layout.addStretch(1)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
+        broker_grid = QGridLayout()
+        broker_grid.setSpacing(8)
+        broker_grid.setColumnStretch(0, 1)
+        broker_grid.setColumnStretch(1, 0)
         self._profile_selector = BrokerProfileSelector()
         self._profile_selector.setObjectName("connectionBrokerSelector")
+        self._profile_selector.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._profile_selector.setAccessibleName("Active broker profile")
         self._profile_selector.setMinimumWidth(160)
         self._profile_selector.currentIndexChanged.connect(
@@ -244,20 +253,31 @@ class BrokerConnectionPane(WorkspacePane):
             self.add_profile_requested.emit
         )
 
-        self._disconnect_button = QPushButton("Disconnect")
-        self._disconnect_button.setObjectName("brokerDisconnectButton")
-        self._disconnect_button.clicked.connect(
-            self.disconnect_requested.emit
+        self._inspect_snapshot_button = QPushButton("Inspect snapshot")
+        self._inspect_snapshot_button.setObjectName("inspectSnapshotButton")
+        self._inspect_snapshot_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._inspect_snapshot_button.setAccessibleName("Inspect broker snapshot")
+        self._inspect_snapshot_button.clicked.connect(
+            self.inspect_snapshot_requested.emit
         )
+
         self._lifecycle_button = QPushButton("Connect")
         self._lifecycle_button.setObjectName("brokerLifecycleButton")
+        self._lifecycle_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._lifecycle_button.setProperty("primary", True)
         self._lifecycle_button.clicked.connect(self._request_lifecycle_operation)
 
-        row.addWidget(self._profile_selector, 1)
-        row.addWidget(self._disconnect_button)
-        row.addWidget(self._lifecycle_button)
-        self.content_layout.addLayout(row)
+        self._health_button = QPushButton("Health: Not evaluated")
+        self._health_button.setObjectName("brokerHealthSummary")
+        self._health_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._health_button.setAccessibleName("Inspect broker health")
+        self._health_button.clicked.connect(self.health_requested.emit)
+        broker_grid.addWidget(self._profile_selector, 0, 0)
+        broker_grid.addWidget(self._lifecycle_button, 0, 1)
+        broker_grid.addWidget(self._health_button, 1, 0)
+        broker_grid.addWidget(self._inspect_snapshot_button, 1, 1)
+        self.content_layout.addLayout(broker_grid)
+        self.setMaximumHeight(152)
 
     def render(self, view_model: MainViewModel, busy: bool = False) -> None:
         profiles = view_model.broker_profiles
@@ -281,13 +301,30 @@ class BrokerConnectionPane(WorkspacePane):
             management_enabled,
         )
         self._profile_selector.setEnabled(management_enabled)
-        self._disconnect_button.setEnabled(
-            self._status in {"connecting", "connected", "reconnecting"}
-            and not busy
-        )
         lifecycle_text, lifecycle_enabled = self._lifecycle_presentation(busy)
         self._lifecycle_button.setText(lifecycle_text)
         self._lifecycle_button.setEnabled(lifecycle_enabled)
+        health = view_model.health_summary
+        counts = self._compact_health_counts(health.label, health.counts)
+        suffix = f" · {counts}" if counts else ""
+        self._health_button.setText(f"Health: {health.label}{suffix}")
+        self._health_button.setToolTip(health.explanation)
+        self._health_button.setProperty("healthTone", health.tone)
+        self._health_button.style().unpolish(self._health_button)
+        self._health_button.style().polish(self._health_button)
+
+    @staticmethod
+    def _compact_health_counts(label: str, counts: str) -> str:
+        parts = counts.split(" · ") if counts else []
+        compact = []
+        for part in parts:
+            if part.startswith(f"{label} "):
+                compact.append(part.removeprefix(f"{label} "))
+            elif part.endswith(" not shown"):
+                compact.append(part.removesuffix(" not shown"))
+            else:
+                compact.append(part)
+        return " · ".join(compact)
 
     def _select_profile(self, index: int) -> None:
         if index < 0:
@@ -300,7 +337,7 @@ class BrokerConnectionPane(WorkspacePane):
         if self._status == "disconnected":
             self.connect_requested.emit()
         elif self._status == "connected":
-            self.reconnect_requested.emit()
+            self.disconnect_requested.emit()
 
     def _lifecycle_presentation(self, busy: bool) -> tuple[str, bool]:
         if self._status == "connecting":
@@ -308,5 +345,5 @@ class BrokerConnectionPane(WorkspacePane):
         if self._status == "reconnecting":
             return "Reconnecting…", False
         if self._status == "connected":
-            return "Reconnect", not busy
+            return "Disconnect", not busy
         return "Connect", not busy

@@ -1,7 +1,10 @@
 import asyncio
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.models.connection_status import ConnectionStatus
@@ -77,6 +80,7 @@ def build_repository(
     manager.subscribe_once = AsyncMock()
     manager.disconnect = MagicMock()
     manager.subscriptions = ()
+    health_sink = MagicMock()
 
     with patch(
         "topicgate.infrastructure.repository.observer_mqtt_repository.SubscriptionManager",
@@ -89,6 +93,7 @@ def build_repository(
             broker_id=broker_id,
             message_recorder=message_recorder,
             current_topics=current_topics,
+            health_sink=health_sink,
         )
 
     return repository, manager
@@ -118,6 +123,24 @@ def test_repository_reads_topic_values_from_current_topic_repository() -> None:
     repository.handle_message(None, None, message)
 
     assert repository.get_state(message.topic).payload == b"open"
+
+
+def test_health_failure_does_not_interrupt_observation_delivery() -> None:
+    captured = []
+    repository, _ = build_repository()
+    repository.health_sink.evaluate_observation.side_effect = RuntimeError(
+        "evaluation failed"
+    )
+    repository._observation_sink = captured.append
+
+    repository.handle_message(
+        None,
+        None,
+        MqttMessage("SmartHome/door/status", b"open", qos=1, retain=False),
+    )
+
+    assert len(captured) == 1
+    assert captured[0].payload == b"open"
 
 
 def test_repository_truncates_before_updating_model_and_sink() -> None:
@@ -163,6 +186,31 @@ def test_repository_records_processed_topic_message() -> None:
     assert recorded.topic == observation.topic
     assert recorded.payload == observation.payload
     assert recorded.observation_id == observation.observation_id
+
+
+def test_repository_counts_message_recording_failures() -> None:
+    recorder = MagicMock()
+    repository, _ = build_repository(message_recorder=recorder)
+    recorder.record_message.side_effect = RuntimeError("database unavailable")
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        repository.handle_message(
+            None,
+            None,
+            MqttMessage("SmartHome/value", b"42", 1, True),
+        )
+
+    assert repository.recording_failure_count == 1
+
+
+def test_repository_tracks_rejected_subscriptions() -> None:
+    repository, _ = build_repository()
+    rejected = SimpleNamespace(is_failure=True)
+    accepted = SimpleNamespace(is_failure=False)
+
+    repository._handle_subscription_result((accepted, rejected))
+
+    assert repository.subscription_rejected_count == 1
 
 
 def test_repository_reads_current_values_instead_of_supplied_model_values() -> None:

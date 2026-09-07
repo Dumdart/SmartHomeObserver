@@ -14,15 +14,15 @@ class ObservationRetentionProcessor:
     def truncate_mqtt_message(
         message: MqttMessage,
         policy: ObservationRetentionPolicy,
-    ) -> MqttMessage:
+    ) -> tuple[MqttMessage, bool]:
         limit = policy.max_payload_bytes_per_topic
         if len(message.payload) <= limit:
-            return message
+            return message, False
         return replace(
             message,
             payload=message.payload[:limit],
             payload_size=message.payload_size,
-        )
+        ), True
 
     @staticmethod
     def truncate_topic_message(

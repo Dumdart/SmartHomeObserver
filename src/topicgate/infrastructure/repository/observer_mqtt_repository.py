@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -6,6 +7,7 @@ from uuid import UUID, uuid4
 
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.interfaces.current_topic_reader import CurrentTopicReader
+from topicgate.core.interfaces.health_observation_sink import HealthObservationSink
 from topicgate.core.interfaces.topic_message_recorder import TopicMessageRecorder
 from topicgate.core.models.connection_status import ConnectionStatus
 from topicgate.core.models.current_topic import CurrentTopic
@@ -32,6 +34,9 @@ from topicgate.processors.observation_retention_processor import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class ObserverMqttRepository:
     """Observe messages matching the supplied absolute MQTT topic filters."""
 
@@ -48,6 +53,7 @@ class ObserverMqttRepository:
         broker_id: UUID,
         message_recorder: TopicMessageRecorder,
         current_topics: CurrentTopicReader,
+        health_sink: HealthObservationSink,
     ) -> None:
         self._retention_policy = retention_policy or ObservationRetentionPolicy
         self._observation_sink = observation_sink
@@ -55,6 +61,7 @@ class ObserverMqttRepository:
         self._broker_id = broker_id
         self._message_recorder = message_recorder
         self._current_topics = current_topics
+        self.health_sink = health_sink
         self.message_queue: asyncio.Queue[MqttMessage] = asyncio.Queue(
             maxsize=MAX_PENDING_MESSAGE_NOTIFICATIONS
         )
@@ -63,6 +70,9 @@ class ObserverMqttRepository:
         self.connected_at: datetime | None = None
         self.observation_started_at: datetime | None = None
         self._dropped_message_count = 0
+        self._recording_failure_count = 0
+        self._subscription_failure_count = 0
+        self._subscription_rejected_count = 0
         self._is_running = False
         self._is_stopping = False
         self._lifecycle_lock = asyncio.Lock()
@@ -86,7 +96,11 @@ class ObserverMqttRepository:
         try:
             await self._mqtt_gate.start()
             self._set_connection_status(ConnectionStatus.CONNECTED)
-            await self._subscription_manager.activate()
+            try:
+                await self._subscription_manager.activate()
+            except Exception:
+                self._subscription_failure_count += 1
+                raise
         except Exception as ex:
             self._is_running = False
             self._is_stopping = True
@@ -181,7 +195,7 @@ class ObserverMqttRepository:
 
     def handle_message(self, _client: Any, _userdata: Any, msg: MqttMessage) -> None:
         validate_topic_name(msg.topic)
-        msg = ObservationRetentionProcessor.truncate_mqtt_message(
+        msg, is_truncated = ObservationRetentionProcessor.truncate_mqtt_message(
             msg,
             self._retention_policy(),
         )
@@ -201,8 +215,21 @@ class ObserverMqttRepository:
                 1 if previous is None else previous.message.message_count + 1
             ),
             observation_id=uuid4(),
+            is_truncated=is_truncated
         )
-        self._message_recorder.record_message(entry)
+        try:
+            self._message_recorder.record_message(entry)
+        except Exception:
+            self._recording_failure_count += 1
+            raise
+        try:
+            self.health_sink.evaluate_observation(entry)
+        except Exception:
+            logger.exception(
+                "Health evaluation failed for broker %s topic %s.",
+                entry.broker_id,
+                entry.topic,
+            )
         observation = CurrentTopic(entry, ObservationStatus.LIVE).to_observation()
         if self._observation_sink is not None:
             self._observation_sink(observation)
@@ -214,6 +241,18 @@ class ObserverMqttRepository:
     @property
     def dropped_message_count(self) -> int:
         return self._dropped_message_count + self._mqtt_gate.dropped_message_count
+
+    @property
+    def recording_failure_count(self) -> int:
+        return self._recording_failure_count
+
+    @property
+    def subscription_failure_count(self) -> int:
+        return self._subscription_failure_count
+
+    @property
+    def subscription_rejected_count(self) -> int:
+        return self._subscription_rejected_count
 
     def drain_pending_messages(self) -> tuple[MqttMessage, ...]:
         messages: list[MqttMessage] = []
@@ -285,6 +324,14 @@ class ObserverMqttRepository:
         else:
             self._set_connection_status(ConnectionStatus.DISCONNECTED)
 
+    def _handle_subscription_result(self, reason_codes: Any) -> None:
+        codes = reason_codes if isinstance(reason_codes, (list, tuple)) else ()
+        self._subscription_rejected_count = sum(
+            1 for code in codes if _reason_code_failed(code)
+        )
+        if not self._subscription_rejected_count:
+            self._subscription_failure_count = 0
+
     def _set_connection_status(self, status: ConnectionStatus) -> None:
         if self.connection_status != status:
             if status == ConnectionStatus.CONNECTED:
@@ -306,3 +353,13 @@ class ObserverMqttRepository:
             ) and current.status is ObservationStatus.LIVE:
                 removed.append(topic)
         self._message_recorder.remove_current_topics(self._broker_id, removed)
+
+
+def _reason_code_failed(reason_code: Any) -> bool:
+    is_failure = getattr(reason_code, "is_failure", None)
+    if is_failure is not None:
+        return bool(is_failure)
+    try:
+        return int(reason_code) >= 128
+    except (TypeError, ValueError):
+        return False

@@ -5,16 +5,25 @@ from contextlib import asynccontextmanager
 from contextlib import suppress
 from datetime import datetime
 from typing import AsyncIterator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from PySide6.QtCore import QObject, Signal
 
 from topicgate.app.models.broker_snapshot import BrokerSnapshot
+from topicgate.app.models.expectation_health_report import (
+    ExpectationHealthReport,
+    FailureHistoryResult,
+)
 from topicgate.app.services.broker_snapshot_service import BrokerSnapshotService
+from topicgate.app.services.expectation_management_service import (
+    ExpectationManagementService,
+)
+from topicgate.app.services.health_query_service import HealthQueryService
 from topicgate.app.services.mcp_setup_service import McpSetupService
 from topicgate.app.models.mcp_setup import McpPreflightCheck, McpSetupInformation
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.models.broker_summary import BrokerSummary
+from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.core.models.message_filter import MessageFilter, OrderType
 from topicgate.core.models.mqtt_observation import MqttObservation, ObservationSource
 from topicgate.core.models.subscription import Subscription
@@ -32,6 +41,14 @@ from topicgate.core.models.observation_retention_policy import (
     ObservationRetentionPolicy,
 )
 from topicgate.core.models.topic_message import TopicMessage
+from topicgate.core.models.health import (
+    ActionKind,
+    BrokerTarget,
+    EqualCondition,
+    HealthExpectation,
+    HealthSeverity,
+    TopicTarget,
+)
 from topicgate.core.mqtt_topics import (
     mqtt_filter_has_wildcards,
     mqtt_filter_matches,
@@ -58,6 +75,13 @@ from topicgate.presentation.retention_presentation import (
     validate_retention_policy_values,
 )
 from topicgate.presentation.snapshot_presentation import size_label
+from topicgate.presentation.health_presentation import (
+    HealthSummary,
+    TopicHealthSummary,
+    broker_health_summary,
+    topic_health_summary,
+)
+from topicgate.processors.condition_factory import ConditionFactory
 
 
 class MainViewModel(QObject):
@@ -72,6 +96,7 @@ class MainViewModel(QObject):
     operation_state_changed = Signal()
     operation_failed = Signal(str, str)
     stored_observations_changed = Signal()
+    health_changed = Signal()
 
     def __init__(
         self,
@@ -80,11 +105,19 @@ class MainViewModel(QObject):
         *,
         snapshot_service: BrokerSnapshotService | None = None,
         mcp_setup_service: McpSetupService | None = None,
+        health_query_service: HealthQueryService | None = None,
+        expectation_management_service: (
+            ExpectationManagementService | None
+        ) = None,
     ) -> None:
         super().__init__()
         self._runtime = runtime
         self._snapshot_service = snapshot_service or BrokerSnapshotService(runtime)
         self._mcp_setup_service = mcp_setup_service
+        self._health_query_service = health_query_service
+        self._expectation_management_service = expectation_management_service
+        self._health_report_result: ExpectationHealthReport | None = None
+        self._health_history_result = FailureHistoryResult((), None, 0)
         self._snapshot_query = SnapshotQuery()
         self._topic = topic
         self._snapshot = self._build_current_snapshot(self._snapshot_query)
@@ -111,6 +144,300 @@ class MainViewModel(QObject):
     @property
     def title(self) -> str:
         return "TopicGate Desktop"
+
+    @property
+    def health_report(self) -> ExpectationHealthReport | None:
+        return self._current_health_report()
+
+    @property
+    def health_history(self) -> FailureHistoryResult:
+        return self._health_history_result
+
+    @property
+    def health_reporting_available(self) -> bool:
+        return self._health_query_service is not None
+
+    @property
+    def health_summary(self) -> HealthSummary:
+        return broker_health_summary(
+            self._current_health_report(),
+            self._broker_health_expectations(),
+            available=self.health_reporting_available,
+        )
+
+    @property
+    def selected_topic_health(self) -> TopicHealthSummary:
+        return topic_health_summary(
+            self._topic,
+            self._current_health_report(),
+            self.topic_expectations,
+            available=self.health_reporting_available,
+        )
+
+    @property
+    def topic_expectations(self) -> tuple[HealthExpectation, ...]:
+        if (
+            self._expectation_management_service is None
+            or not self._topic
+            or mqtt_filter_has_wildcards(self._topic)
+        ):
+            return ()
+        return tuple(
+            item
+            for item in self._expectation_management_service.list_expectations(
+                self.active_broker_profile.id
+            )
+            if isinstance(item.target, TopicTarget)
+            and item.target.topic == self._topic
+        )
+
+    @property
+    def broker_expectations(self) -> tuple[HealthExpectation, ...]:
+        if self._expectation_management_service is None:
+            return ()
+        return tuple(
+            item
+            for item in self._expectation_management_service.list_expectations(
+                self.active_broker_profile.id
+            )
+            if isinstance(item.target, BrokerTarget)
+        )
+
+    def _broker_health_expectations(self) -> tuple[HealthExpectation, ...]:
+        if self._expectation_management_service is None:
+            return ()
+        return tuple(
+            self._expectation_management_service.list_expectations(
+                self.active_broker_profile.id
+            )
+        )
+
+    def _current_health_report(self) -> ExpectationHealthReport | None:
+        report = self._health_report_result
+        if (
+            report is not None
+            and report.broker_id == self.active_broker_profile.id
+        ):
+            return report
+        return None
+
+    def refresh_health(self) -> ExpectationHealthReport:
+        if self._health_query_service is None:
+            raise RuntimeError("Health reporting is unavailable.")
+        self._health_report_result = self._health_query_service.get_health_report(
+            self.active_broker_profile.id
+        )
+        self.health_changed.emit()
+        return self._health_report_result
+
+    def query_health_history(
+        self,
+        *,
+        topic: str | None = None,
+        status: str = "all",
+        after: datetime | None = None,
+        before: datetime | None = None,
+        cursor: int | None = None,
+    ) -> FailureHistoryResult:
+        if self._health_query_service is None:
+            raise RuntimeError("Health history is unavailable.")
+        page = self._health_query_service.query_failure_history(
+            broker_id=self.active_broker_profile.id,
+            topic=topic or None,
+            status=status,
+            after=after,
+            before=before,
+            cursor=cursor,
+        )
+        self._health_history_result = (
+            FailureHistoryResult(
+                self._health_history_result.items + page.items,
+                page.next_cursor,
+                len(self._health_history_result.items) + page.returned_count,
+            )
+            if cursor is not None
+            else page
+        )
+        self.health_changed.emit()
+        return self._health_history_result
+
+    def delete_health_history(self, failure_id: UUID) -> None:
+        if self._health_query_service is None:
+            raise RuntimeError("Health history is unavailable.")
+        self._health_query_service.delete_failure_history(failure_id)
+        remaining = tuple(
+            item
+            for item in self._health_history_result.items
+            if item.failure_id != failure_id
+        )
+        next_cursor = self._health_history_result.next_cursor
+        if next_cursor is not None:
+            next_cursor = max(0, next_cursor - 1)
+        self._health_history_result = FailureHistoryResult(
+            remaining,
+            next_cursor,
+            len(remaining),
+        )
+        self.health_changed.emit()
+
+    def save_expectation(
+        self,
+        *,
+        target_kind: str,
+        expectation_id: UUID | None,
+        name: str,
+        description: str,
+        expected_values: tuple[str, ...] | str,
+        condition_kind: ConditionKind = ConditionKind.EQUAL,
+        encoding: str = "utf-8",
+        enabled: bool = True,
+        log_action: bool = True,
+        store_failure: bool = True,
+    ) -> HealthExpectation:
+        service = self._require_expectation_management()
+
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Expectation name is required.")
+        broker_id = self.active_broker_profile.id
+        if isinstance(expected_values, str):
+            expected_values = (expected_values,)
+
+        if target_kind == "topic":
+            if not self._topic or mqtt_filter_has_wildcards(self._topic):
+                raise ValueError("Select an exact MQTT topic first.")
+            target = TopicTarget(broker_id, self._topic)
+            condition_values = (
+                self._decode_expected_values(expected_values, encoding)
+                if condition_kind
+                in {
+                    ConditionKind.EQUAL,
+                    ConditionKind.IN_RANGE,
+                    ConditionKind.OUTSIDE,
+                }
+                else expected_values
+            )
+        elif target_kind == "broker":
+            if condition_kind in {
+                ConditionKind.NUMERIC_RANGE,
+                ConditionKind.TOPIC_EXISTS,
+                ConditionKind.TOPIC_ABSENT,
+                ConditionKind.FRESH_WITHIN,
+            }:
+                raise ValueError(
+                    "Numeric range, existence, and freshness conditions require "
+                    "a topic target."
+                )
+            target = BrokerTarget(broker_id)
+            condition_values = expected_values
+        else:
+            raise ValueError("target_kind must be 'topic' or 'broker'")
+
+        actions = frozenset(
+            action
+            for selected, action in (
+                (log_action, ActionKind.LOG),
+                (store_failure, ActionKind.STORE_FAILURE),
+            )
+            if selected
+        )
+
+        if expectation_id is None:
+            result = service.create_expectation(
+                HealthExpectation(
+                    expectation_id=uuid4(),
+                    revision=1,
+                    enabled=enabled,
+                    severity=HealthSeverity.CRITICAL,
+                    target=target,
+                    condition=ConditionFactory.build_condition(
+                        condition_kind,
+                        condition_values,
+                    ),
+                    actions=actions,
+                    name=normalized_name,
+                    description=description.strip(),
+                ),
+                broker_id=broker_id,
+            )
+        else:
+            result = service.edit_expectation(
+                expectation_id,
+                broker_id=broker_id,
+                is_enabled=enabled,
+                new_target=target,
+                new_condition=ConditionFactory.build_condition(
+                    condition_kind,
+                    condition_values,
+                ),
+                new_actions=actions,
+                name=normalized_name,
+                description=description.strip(),
+            )
+        self._refresh_after_health_change()
+        return result
+
+    def set_expectation_enabled(
+        self,
+        expectation_id: UUID,
+        enabled: bool,
+    ) -> HealthExpectation:
+        service = self._require_expectation_management()
+        result = (
+            service.enable_expectation(
+                expectation_id,
+                broker_id=self.active_broker_profile.id,
+            )
+            if enabled
+            else service.disable_expectation(
+                expectation_id,
+                broker_id=self.active_broker_profile.id,
+            )
+        )
+        self._refresh_after_health_change()
+        return result
+
+    def delete_expectation(self, expectation_id: UUID) -> None:
+        self._require_expectation_management().delete_expectation(
+            expectation_id,
+            broker_id=self.active_broker_profile.id,
+        )
+        self._refresh_after_health_change()
+
+    def _refresh_after_health_change(self) -> None:
+        if self._health_query_service is not None:
+            self._health_report_result = (
+                self._health_query_service.get_health_report(
+                    self.active_broker_profile.id
+                )
+            )
+        self.health_changed.emit()
+
+    def _require_expectation_management(self) -> ExpectationManagementService:
+        if self._expectation_management_service is None:
+            raise RuntimeError("Expectation management is unavailable.")
+        return self._expectation_management_service
+
+    @staticmethod
+    def _decode_expected_values(
+        values: tuple[str, ...],
+        encoding: str,
+    ) -> tuple[bytes, ...]:
+        if encoding == "utf-8":
+            return tuple(value.encode("utf-8") for value in values)
+
+        if encoding == "base64":
+            try:
+                return tuple(
+                    b64decode(value, validate=True)
+                    for value in values
+                )
+            except (binascii.Error, ValueError) as error:
+                raise ValueError(
+                    "One or more expected values are not valid base64."
+                ) from error
+
+        raise ValueError("Encoding must be UTF-8 or base64.")
 
     @property
     def topic(self) -> str:
@@ -858,6 +1185,9 @@ class MainViewModel(QObject):
             if profile_changed:
                 await self._restart_observer_tasks()
                 self._topic = ""
+                self._health_report_result = None
+                self._health_history_result = FailureHistoryResult((), None, 0)
+                self.health_changed.emit()
             self.refresh_snapshot()
             self.subscriptions_changed.emit()
             self.configuration_changed.emit()

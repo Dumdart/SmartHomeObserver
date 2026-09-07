@@ -54,6 +54,7 @@ def test_app_dependencies_uses_os_credentials_for_broker_profiles(
     retention_type.assert_called_once_with(database)
     assert dependencies.service_items == (
         dependencies.persistence,
+        dependencies.health_monitor,
         dependencies.runtime,
     )
     assert isinstance(dependencies.snapshot_service, BrokerSnapshotService)

@@ -9,11 +9,10 @@ QMessageBox QLabel { background: transparent; color: #202124; }
 QFrame[workspacePane="true"] { background: #ffffff; border: 1px solid #c8ced6; border-radius: 8px; }
 QFrame#observerEmptyState { background: #f8fafc; border: 1px solid #c8ced6; border-radius: 5px; }
 QLabel#observerEmptyStateText { background: transparent; color: #4b5563; }
-QWidget#snapshotPanel, QWidget#snapshotContent, QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { background: #ffffff; }
-QFrame#snapshotHeader { background: #fbfcfd; border: 1px solid #c8ced6; border-radius: 5px; }
+QWidget#snapshotPanel, QWidget#snapshotAdvancedContent, QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { background: #ffffff; }
 QScrollArea#snapshotPanelScrollArea { background: #ffffff; }
-QToolButton#snapshotToggleButton { border: 0; background: transparent; font-weight: 650; padding: 3px 5px; }
-QToolButton#snapshotToggleButton:hover { background: #eef2f6; }
+QToolButton#snapshotAdvancedButton { border: 0; background: transparent; font-weight: 650; padding: 3px 5px; }
+QToolButton#snapshotAdvancedButton:hover { background: #eef2f6; }
 QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { border: 1px solid #c8ced6; border-radius: 5px; margin-top: 8px; padding-top: 8px; }
 QGroupBox#snapshotControls::title, QGroupBox#snapshotHealthPanel::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; color: #4b5563; font-weight: 650; }
 QLabel#sectionTitle, QLabel#workspaceHeading { color: #4b5563; font-weight: 650; }
@@ -26,17 +25,31 @@ QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QTreeView:focus { border
 QLineEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled { color: #737b85; background: #f1f3f5; border-color: #c8ced6; }
 QPlainTextEdit#decodedPayload, QPlainTextEdit#rawPayload { background: #fbfcfd; }
 QPlainTextEdit#decodedPayload:focus, QPlainTextEdit#rawPayload:focus { background: #ffffff; }
-QTabBar#topicDetailsMode { background: transparent; }
-QTabBar#topicDetailsMode::tab { color: #4b5563; background: #f3f5f7; border: 1px solid #b8c0ca; padding: 6px 16px; }
-QTabBar#topicDetailsMode::tab:first { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
-QTabBar#topicDetailsMode::tab:last { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
-QTabBar#topicDetailsMode::tab:!first { border-left: 0; }
-QTabBar#topicDetailsMode::tab:hover:!selected { color: #202124; background: #eef2f6; }
-QTabBar#topicDetailsMode::tab:selected { color: #ffffff; background: #405d7a; border-color: #405d7a; font-weight: 650; }
+QTabBar#topicDetailsMode, QTabBar#topicSettingsTabs, QTabBar#healthTabs { background: transparent; }
+QTabBar#topicDetailsMode::tab, QTabBar#topicSettingsTabs::tab, QTabBar#healthTabs::tab { color: #4b5563; background: #f3f5f7; border: 1px solid #b8c0ca; padding: 6px 16px; }
+QTabBar#topicDetailsMode::tab:first, QTabBar#topicSettingsTabs::tab:first, QTabBar#healthTabs::tab:first { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+QTabBar#topicDetailsMode::tab:last, QTabBar#topicSettingsTabs::tab:last, QTabBar#healthTabs::tab:last { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
+QTabBar#topicDetailsMode::tab:!first, QTabBar#topicSettingsTabs::tab:!first, QTabBar#healthTabs::tab:!first { border-left: 0; }
+QTabBar#topicDetailsMode::tab:hover:!selected, QTabBar#topicSettingsTabs::tab:hover:!selected, QTabBar#healthTabs::tab:hover:!selected { color: #202124; background: #eef2f6; }
+QTabBar#topicDetailsMode::tab:selected, QTabBar#topicSettingsTabs::tab:selected, QTabBar#healthTabs::tab:selected { color: #ffffff; background: #405d7a; border-color: #405d7a; font-weight: 650; }
 QLabel#brokerConnectionStatus { border-radius: 9px; padding: 3px 9px; font-weight: 650; }
 QLabel#brokerConnectionStatus[connectionState="connected"] { color: #11653f; background: #dcf7e9; }
 QLabel#brokerConnectionStatus[connectionState="connecting"], QLabel#brokerConnectionStatus[connectionState="reconnecting"] { color: #8a4b00; background: #fff0d5; }
 QLabel#brokerConnectionStatus[connectionState="disconnected"] { color: #4b5563; background: #e9edf1; }
+QPushButton#brokerHealthSummary, QPushButton#topicHealthBadge { text-align: left; font-weight: 650; padding: 3px 8px; }
+QPushButton#topicHealthBadge { border-radius: 9px; font-size: 11px; }
+QPushButton#brokerHealthSummary { color: #4b5563; background: #fbfcfd; border-color: #c8ced6; }
+QPushButton#brokerHealthSummary[healthTone="success"] { color: #11653f; border-left: 3px solid #4ca878; }
+QPushButton#brokerHealthSummary[healthTone="problem"] { color: #8f2525; background: #fff8f8; border-left: 3px solid #c65353; }
+QPushButton#brokerHealthSummary[healthTone="warning"] { color: #8a4b00; background: #fffaf0; border-left: 3px solid #c58a29; }
+QPushButton#brokerHealthSummary[healthTone="neutral"] { color: #4b5563; border-left: 3px solid #89939f; }
+QPushButton#topicHealthBadge[healthTone="success"] { color: #11653f; background: #dcf7e9; border-color: #a8dec2; }
+QPushButton#topicHealthBadge[healthTone="problem"] { color: #8f2525; background: #fff0f0; border-color: #d7a4a4; }
+QPushButton#topicHealthBadge[healthTone="warning"] { color: #8a4b00; background: #fff0d5; border-color: #e3c68f; }
+QPushButton#topicHealthBadge[healthTone="neutral"] { color: #4b5563; background: #e9edf1; border-color: #c8ced6; }
+QLabel[healthTone="problem"] { color: #8f2525; }
+QLabel[healthTone="warning"] { color: #8a4b00; }
+QLabel[healthTone="success"] { color: #11653f; }
 QWidget#brokerProfilePopupRow { background: #ffffff; }
 QToolButton#selectBrokerProfileButton { border: 0; text-align: left; padding: 6px 8px; }
 QToolButton#selectBrokerProfileButton:hover { background: #eef2f6; }
@@ -53,6 +66,7 @@ QPushButton[primary="true"]:pressed { background: #2b4259; border-color: #2b4259
 QPushButton[primary="true"]:disabled { color: #737b85; background: #e5e7eb; border-color: #c8ced6; }
 QPushButton[danger="true"] { color: #a53030; border-color: #d7a4a4; }
 QPushButton[danger="true"]:hover { color: #8f2525; background: #fff5f5; border-color: #c77d7d; }
+QPushButton[danger="true"]:disabled { color: #a66a6a; background: #fffafa; border-color: #e0b4b4; }
 QMenuBar, QMenu, QDockWidget { background: #ffffff; }
 QMenuBar { border-bottom: 1px solid #c8ced6; }
 QToolButton#brokerConnectionButton { background: transparent; border: 0; border-radius: 3px; padding: 0 6px; }

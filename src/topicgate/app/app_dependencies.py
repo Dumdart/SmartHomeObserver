@@ -1,4 +1,14 @@
 from pathlib import Path
+
+from topicgate.app.services.broker_health_monitor import BrokerHealthMonitor
+from topicgate.app.services.broker_health_wait_service import BrokerHealthWaitService
+from topicgate.app.services.expectation_management_service import (
+    ExpectationManagementService,
+)
+from topicgate.app.services.failure_history_service import FailureHistoryService
+from topicgate.app.services.health_report_service import HealthReportService
+from topicgate.app.services.health_query_service import HealthQueryService
+from topicgate.app.services.health_expectation_service import HealthExpectationService
 from topicgate.app.services.observation_query_service import ObservationQueryService
 from topicgate.app.services.service_item import ServiceItem
 from topicgate.app.services.persistence_lifecycle import PersistenceLifecycle
@@ -15,19 +25,36 @@ from topicgate.app.broker_runtime_state import BrokerRuntimeState
 from topicgate.app.topicgate_runtime import TopicGateRuntime
 from topicgate.core.interfaces.observer_repository import ObserverRepository
 from topicgate.core.models.broker_profile import BrokerProfile
+from topicgate.core.models.health import ActionKind
 from topicgate.infrastructure.database.database_context import DatabaseContext
 from topicgate.infrastructure.credentials.credential_store import CredentialStore
 from topicgate.infrastructure.credentials.os_credential_store import OSCredentialStore
+from topicgate.infrastructure.health_actions.log_health_action import LogHealthAction
+from topicgate.infrastructure.health_actions.persist_failure_action import (
+    PersistFailureAction,
+)
+from topicgate.infrastructure.repository.expectation_failure_repository import (
+    ExpectationFailureRepository,
+)
+from topicgate.infrastructure.repository.health_expectation_repository import (
+    HealthExpectationRepository,
+)
+from topicgate.infrastructure.repository.expectation_state_repository import (
+    ExpectationStateRepository,
+)
 from topicgate.infrastructure.repository.observer_mqtt_repository import (
     ObserverMqttRepository,
-)
-from topicgate.infrastructure.repository.topic_message_repository import (
-    TopicMessageRepository,
 )
 from topicgate.infrastructure.repository.observation_retention_policy_repository import (
     ObservationRetentionPolicyRepository,
 )
+from topicgate.infrastructure.repository.topic_message_repository import (
+    TopicMessageRepository,
+)
 from topicgate.paths import prepare_database_path, sqlite_url
+from topicgate.processors.action_dispatcher import ActionDispatcher
+from topicgate.processors.health_action_registry import HealthActionRegistry
+from topicgate.processors.transition_tracker import TransitionTracker
 
 
 class AppDependencies:
@@ -79,6 +106,67 @@ class AppDependencies:
             runtime_state=self.broker_runtime_state,
             topic_messages=self.topic_messages,
         )
+
+        self.health_expectation_repo = HealthExpectationRepository(self._db_context)
+        self.expectation_state_repo = ExpectationStateRepository(self._db_context)
+        self.expectation_failure_repo = ExpectationFailureRepository(
+            self._db_context
+        )
+        self.transition_tracker = TransitionTracker()
+        self.health_action_registry = HealthActionRegistry(
+            handlers={
+                ActionKind.LOG: LogHealthAction(),
+                ActionKind.STORE_FAILURE: PersistFailureAction(
+                    self.expectation_failure_repo
+                ),
+            }
+        )
+        self.action_dispatcher = ActionDispatcher(self.health_action_registry)
+        self.health_sink = HealthExpectationService(
+            health_expectation_repo=self.health_expectation_repo,
+            expectation_state_repo=self.expectation_state_repo,
+            expectation_failure_repo=self.expectation_failure_repo,
+            transaction_manager=self._db_context,
+            transition_tracker=self.transition_tracker,
+            action_dispatcher=self.action_dispatcher,
+            subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
+                broker_id
+            ).workspace.subscriptions,
+            broker_metadata_reader=lambda broker_id: (
+                self.broker_runtime_state.repositories[broker_id]
+            ),
+            current_topics_reader=self.topic_messages.get_current_topics,
+        )
+
+        self.expectation_management_service = ExpectationManagementService(
+            health_expectation_repository=self.health_expectation_repo,
+            expectation_state_repository=self.expectation_state_repo,
+            expectation_failure_repository=self.expectation_failure_repo,
+            transaction_manager=self._db_context,
+            control_operation=self.control_operations.operation,
+            subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
+                broker_id
+            ).workspace.subscriptions,
+        )
+        self.failure_history_service = FailureHistoryService(
+            expectation_failure_repository=self.expectation_failure_repo,
+            health_expectation_repository=self.health_expectation_repo,
+        )
+        self.health_report_service = HealthReportService(
+            health_expectation_repository=self.health_expectation_repo,
+            expectation_state_repository=self.expectation_state_repo,
+            expectation_failure_repository=self.expectation_failure_repo,
+            subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
+                broker_id
+            ).workspace.subscriptions,
+        )
+        self.health_query_service = HealthQueryService(
+            self.health_sink,
+            self.expectation_management_service,
+            self.failure_history_service,
+            self.health_report_service,
+        )
+
         profile = self.broker_profiles.get_profile()
 
         self.broker_runtime_state.repositories.update(
@@ -99,6 +187,10 @@ class AppDependencies:
             control_operations=self.control_operations,
         )
         self.broker_resolver = BrokerResolver(self.runtime)
+        self.health_wait_service = BrokerHealthWaitService(
+            self.runtime, self.expectation_management_service,
+            self.health_sink, self.health_query_service,
+        )
         self.snapshot_service = BrokerSnapshotService(
             self.runtime,
             resolver=self.broker_resolver,
@@ -111,9 +203,14 @@ class AppDependencies:
             database_path.parent,
             database_path,
         )
+        self.health_monitor = BrokerHealthMonitor(
+            self.health_sink,
+            broker_ids_reader=lambda: (self.runtime.active_broker.id,),
+        )
 
         self.service_items: tuple[ServiceItem, ...] = (
             self.persistence,
+            self.health_monitor,
             self.runtime,
         )
 
@@ -128,4 +225,5 @@ class AppDependencies:
             broker_id=profile.id,
             message_recorder=self.topic_messages,
             current_topics=self.topic_messages,
+            health_sink=self.health_sink,
         )

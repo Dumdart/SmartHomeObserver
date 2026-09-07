@@ -1,10 +1,20 @@
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock
 
-from PySide6.QtCore import QCoreApplication
-from PySide6.QtGui import QGuiApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from topicgate.gui.app import App, configure_application_identity
+from PySide6.QtCore import QCoreApplication
+from PySide6.QtGui import QColor, QGuiApplication, QPixmap
+from PySide6.QtWidgets import QApplication
+
+from topicgate.gui.app import (
+    STARTUP_SCREEN_SIZE,
+    App,
+    StartupSplashScreen,
+    configure_application_identity,
+    create_startup_pixmap,
+)
 
 
 def test_application_uses_topicgate_identity() -> None:
@@ -13,6 +23,31 @@ def test_application_uses_topicgate_identity() -> None:
     assert QCoreApplication.organizationName() == "Dumdart"
     assert QCoreApplication.applicationName() == "TopicGate"
     assert QGuiApplication.applicationDisplayName() == "TopicGate Desktop"
+
+
+def test_startup_screen_uses_desktop_theme_tokens() -> None:
+    application = QApplication.instance() or QApplication([])
+
+    pixmap = create_startup_pixmap(QPixmap())
+    image = pixmap.toImage()
+
+    assert (pixmap.width(), pixmap.height()) == STARTUP_SCREEN_SIZE
+    assert image.pixelColor(0, 0) == QColor("#f3f4f6")
+    assert image.pixelColor(12, 12) == QColor("#ffffff")
+    assert image.pixelColor(40, 230) == QColor("#e7eff7")
+    assert application is not None
+
+
+def test_startup_screen_renders_current_progress_message() -> None:
+    application = QApplication.instance() or QApplication([])
+    splash_screen = StartupSplashScreen(create_startup_pixmap(QPixmap()))
+
+    splash_screen.showMessage("Connecting to MQTT...")
+    rendered = splash_screen.grab().toImage()
+
+    assert splash_screen.message() == "Connecting to MQTT..."
+    assert rendered.pixelColor(46, 236) == QColor("#405d7a")
+    assert application is not None
 
 
 async def test_app_remains_open_when_initial_mqtt_connection_fails() -> None:

@@ -263,6 +263,15 @@ class TopicGateRuntime(ServiceItem):
     def get_dropped_message_count(self, broker_id: UUID) -> int:
         return self._repository_for(broker_id).dropped_message_count
 
+    def get_recording_failure_count(self, broker_id: UUID) -> int:
+        return self._repository_for(broker_id).recording_failure_count
+
+    def get_subscription_failure_count(self, broker_id: UUID) -> int:
+        return self._repository_for(broker_id).subscription_failure_count
+
+    def get_subscription_rejected_count(self, broker_id: UUID) -> int:
+        return self._repository_for(broker_id).subscription_rejected_count
+
     def get_connected_at(self, broker_id: UUID) -> datetime | None:
         return getattr(self._repository_for(broker_id), "connected_at", None)
 
@@ -433,6 +442,10 @@ class TopicGateRuntime(ServiceItem):
         if self._control_operations is None:
             return nullcontext()
         return self._control_operations.operation(name)
+
+    def check_control_ownership(self) -> None:
+        if self._control_operations is not None:
+            self._control_operations.check_ownership()
 
     def _persist_active_subscriptions(self) -> None:
         workspace_id = self._get_broker_profile().workspace_id

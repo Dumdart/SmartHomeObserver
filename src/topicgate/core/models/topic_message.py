@@ -13,3 +13,4 @@ class TopicMessage:
     payload_size: int
     message_count: int
     observation_id: UUID
+    is_truncated: bool = False

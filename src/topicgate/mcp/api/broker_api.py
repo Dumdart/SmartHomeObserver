@@ -9,8 +9,11 @@ from topicgate.app.services.broker_resolver import BrokerResolver
 from topicgate.app.services.broker_snapshot_service import DEFAULT_SNAPSHOT_RESULT_LIMIT
 from topicgate.app.topicgate_runtime import TopicGateRuntime
 from topicgate.core.models.broker_summary import BrokerSummary
+from topicgate.core.models.connection_status import ConnectionStatus
 from topicgate.core.payload_limits import MAX_RENDERED_PAYLOAD_BYTES
 from topicgate.mcp.api.mcp_api import MCPApi
+from topicgate.core.config.mqtt_config import MqttConfig
+from topicgate.mcp.requests.broker_creation import CreateBrokerRequest
 
 
 class BrokerAPI(MCPApi):
@@ -28,7 +31,76 @@ class BrokerAPI(MCPApi):
         mcp.add_tool(self.list_brokers)
         mcp.add_tool(self.inspect_broker)
         if control_enabled:
+            mcp.add_tool(self.create_broker)
             mcp.add_tool(self.activate_broker)
+
+    @tool()
+    def create_broker(self, request: CreateBrokerRequest) -> dict:
+        """Save or reuse an exact matching broker profile without connecting.
+
+        Side effects: Persists a profile and initializes its runtime repository.
+        Required state: Local storage. Passwords and credential references are not accepted.
+        Identifiers: Normalized unique name; returns the persistent broker UUID.
+        Failures: Conflicting name/settings, validation, lease, or storage errors.
+        A username without stored credentials returns needs_credentials; configure
+        this UUID in Desktop before activation. Anonymous creation is supported.
+        """
+        with self._runtime.control_operation("create or reuse broker profile"):
+            matches = [
+                item
+                for item in self._runtime.list_brokers()
+                if item.name.strip().casefold() == request.name.casefold()
+            ]
+            if len(matches) > 1:
+                raise ValueError(
+                    "Ambiguous profile name; resolve existing profiles by UUID."
+                )
+            reused = bool(matches)
+            if matches:
+                summary = matches[0]
+                config = summary.config
+                if (
+                    config.host.casefold(),
+                    config.port,
+                    config.username,
+                    config.use_tls,
+                ) != (request.host, request.port, request.username, request.use_tls):
+                    raise ValueError(
+                        "Profile name conflicts with different settings; no changes made."
+                    )
+            else:
+                summary = self._runtime.create_broker(
+                    request.name,
+                    MqttConfig(
+                        request.host,
+                        request.port,
+                        request.username,
+                        "",
+                        request.use_tls,
+                    ),
+                )
+            needs_credentials = (
+                bool(summary.config.username) and not summary.password_configured
+            )
+            return {
+                "broker_id": summary.id,
+                "name": summary.name,
+                "host": summary.config.host,
+                "port": summary.config.port,
+                "username": summary.config.username,
+                "use_tls": summary.config.use_tls,
+                "reused": reused,
+                "password_configured": summary.password_configured,
+                "status": "needs_credentials" if needs_credentials else "saved",
+                "next_step": (
+                    "Configure credentials for this UUID in TopicGate Desktop, then activate."
+                    if needs_credentials
+                    else "Activate this broker UUID explicitly."
+                ),
+                "connected": self._runtime.get_connection_status(summary.id)
+                == ConnectionStatus.CONNECTED,
+                "connection_side_effects": [],
+            }
 
     @tool(annotations={"readOnlyHint": True})
     def list_brokers(self) -> tuple[BrokerSummary, ...]:

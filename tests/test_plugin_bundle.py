@@ -139,6 +139,8 @@ async def test_cached_plugin_bundle_exposes_read_only_tools(
         "list_brokers",
         "list_subscriptions",
         "list_topics",
+        "query_failure_history",
+        "list_health_expectations",
     }
 
 
@@ -152,3 +154,25 @@ def test_topicgate_package_supports_python_module_execution() -> None:
 
     assert result.returncode == 0
     assert "Run the TopicGate MCP server." in result.stdout
+
+
+async def test_copied_control_bundle_exposes_provisioning_and_health(tmp_path: Path) -> None:
+    cached_plugin = tmp_path / "topicgate"
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    config = json.loads((cached_plugin / ".mcp-control.json").read_text(encoding="utf-8"))
+    server = config["mcpServers"]["topicgate"]
+    assert server["args"] == ["--mode", "control"]
+    server["command"] = sys.executable
+    server["args"] = ["-m", "topicgate", "--mode", "control"]
+    server["env"] = {"TOPICGATE_DATA_DIR": str(tmp_path / "data")}
+    async with Client(config) as client:
+        names = {item.name for item in await client.list_tools()}
+        assert {"create_broker", "activate_broker", "add_subscription",
+                "list_health_expectations", "create_health_expectation",
+                "update_health_expectation", "delete_health_expectation",
+                "get_health_report", "wait_for_broker_health", "query_failure_history"} <= names
+        result = await client.call_tool("create_broker", {
+            "request": {"name": "Saved only", "host": "127.0.0.1", "port": 18830}
+        })
+        assert result.data["status"] == "saved"
+        assert not result.data["connected"]

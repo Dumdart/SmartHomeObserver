@@ -2,7 +2,6 @@ from PySide6.QtCore import QLocale, Qt, Signal
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QFormLayout,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -18,49 +17,35 @@ from topicgate.app.services.broker_snapshot_service import (
     MAX_SNAPSHOT_RESULT_LIMIT,
 )
 from topicgate.core.payload_limits import MAX_RENDERED_PAYLOAD_BYTES
+from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.presentation.snapshot_presentation import (
     BrokerSnapshotHealth,
     SnapshotQuery,
 )
 
 
-class SnapshotPanel(QWidget):
-    """Collapsible snapshot controls and broker-wide health summary."""
+class SnapshotPanel(WorkspacePane):
+    """Broker snapshot inspector with persistent controls and advanced health."""
 
     apply_requested = Signal(object)
     reset_requested = Signal()
     reconnect_observe_requested = Signal(object)
     validation_failed = Signal(str)
-    expansion_changed = Signal(bool)
+    advanced_changed = Signal(bool)
 
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__("Broker snapshot")
         self.setObjectName("snapshotPanel")
         self.setMinimumWidth(0)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(6)
 
-        header = QFrame()
-        header.setObjectName("snapshotHeader")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(8, 3, 8, 3)
-        header_layout.setSpacing(2)
-        primary_summary = QHBoxLayout()
-        primary_summary.setSpacing(7)
-        self._toggle = QToolButton()
-        self._toggle.setObjectName("snapshotToggleButton")
-        self._toggle.setText("Snapshot")
-        self._toggle.setCheckable(True)
-        self._toggle.setChecked(False)
-        self._toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self._toggle.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        self._advanced_button = QToolButton()
+        self._advanced_button.setObjectName("snapshotAdvancedButton")
+        self._advanced_button.setText("Advanced")
+        self._advanced_button.setCheckable(True)
+        self._advanced_button.setAccessibleName(
+            "Show advanced snapshot details"
         )
-        self._toggle.setAccessibleName("Snapshot details")
-        self._toggle.toggled.connect(self._set_expanded)
-        primary_summary.addWidget(self._toggle)
-        primary_summary.addStretch(1)
+        self._advanced_button.toggled.connect(self._set_advanced_visible)
         self._summary_labels = {
             name: self._summary_label(object_name)
             for name, object_name in (
@@ -70,22 +55,16 @@ class SnapshotPanel(QWidget):
                 ("completeness", "snapshotSummaryCompleteness"),
             )
         }
-        primary_summary.addWidget(self._summary_labels["connection"])
-        primary_summary.addWidget(self._summary_labels["completeness"])
+        self.header_layout.addWidget(self._summary_labels["connection"])
+        self.header_layout.addWidget(self._summary_labels["completeness"])
+        self.header_layout.addWidget(self._advanced_button)
+
         secondary_summary = QHBoxLayout()
         secondary_summary.setSpacing(12)
         secondary_summary.addStretch(1)
         secondary_summary.addWidget(self._summary_labels["returned"])
         secondary_summary.addWidget(self._summary_labels["dropped"])
-        header_layout.addLayout(primary_summary)
-        header_layout.addLayout(secondary_summary)
-        layout.addWidget(header)
-
-        self._content = QWidget()
-        self._content.setObjectName("snapshotContent")
-        content_layout = QVBoxLayout(self._content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(6)
+        self.content_layout.addLayout(secondary_summary)
 
         controls = QGroupBox("Snapshot filters")
         controls.setObjectName("snapshotControls")
@@ -139,9 +118,16 @@ class SnapshotPanel(QWidget):
         observe_button = QPushButton("Reconnect && observe")
         observe_button.setObjectName("reconnectObserveButton")
         observe_button.setAccessibleName("Reconnect & observe")
+        observe_button.setProperty("primary", True)
         observe_button.clicked.connect(self._emit_observe)
         form.addRow(observe_button)
-        content_layout.addWidget(controls)
+        self.content_layout.addWidget(controls)
+
+        self._advanced_content = QWidget()
+        self._advanced_content.setObjectName("snapshotAdvancedContent")
+        advanced_layout = QVBoxLayout(self._advanced_content)
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_layout.setSpacing(6)
 
         legend = QLabel(
             "Value legend: Live = received during this run. Cached = restored from local storage. "
@@ -151,7 +137,7 @@ class SnapshotPanel(QWidget):
         legend.setWordWrap(True)
         legend.setTextFormat(Qt.TextFormat.PlainText)
         legend.setAccessibleName("Freshness and source legend")
-        content_layout.addWidget(legend)
+        advanced_layout.addWidget(legend)
 
         health_group = QGroupBox("Snapshot health")
         health_group.setObjectName("snapshotHealthPanel")
@@ -188,8 +174,9 @@ class SnapshotPanel(QWidget):
         self._limitations = self._label("snapshotLimitations")
         self._limitations.setWordWrap(True)
         health_form.addRow("Limitations", self._limitations)
-        content_layout.addWidget(health_group)
-        layout.addWidget(self._content)
+        advanced_layout.addWidget(health_group)
+        self.content_layout.addWidget(self._advanced_content)
+        self.content_layout.addStretch(1)
 
         self._action_widgets = (
             apply_button,
@@ -201,11 +188,11 @@ class SnapshotPanel(QWidget):
         self._summary_labels["returned"].setText("Returned 0")
         self._summary_labels["dropped"].setText("Dropped 0")
         self._summary_labels["completeness"].setText("Limited")
-        self._set_expanded(False)
+        self._set_advanced_visible(False)
 
     @property
-    def is_expanded(self) -> bool:
-        return self._toggle.isChecked()
+    def is_advanced_visible(self) -> bool:
+        return self._advanced_button.isChecked()
 
     @property
     def query(self) -> SnapshotQuery:
@@ -223,8 +210,8 @@ class SnapshotPanel(QWidget):
             payload_limit_bytes=self._payload_limit.value(),
         )
 
-    def set_expanded(self, expanded: bool) -> None:
-        self._toggle.setChecked(expanded)
+    def set_advanced_visible(self, visible: bool) -> None:
+        self._advanced_button.setChecked(visible)
 
     def render_query(self, query: SnapshotQuery) -> None:
         self._topic_filter.setText(query.topic_filter)
@@ -284,28 +271,23 @@ class SnapshotPanel(QWidget):
         for widget in self._action_widgets:
             widget.setEnabled(not busy)
 
-    def _set_expanded(self, expanded: bool) -> None:
-        self._content.setVisible(expanded)
-        self._toggle.setArrowType(
-            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+    def _set_advanced_visible(self, visible: bool) -> None:
+        self._advanced_content.setVisible(visible)
+        self._advanced_button.setText(
+            "Hide advanced" if visible else "Advanced"
         )
-        state = "expanded" if expanded else "collapsed"
-        self._toggle.setAccessibleDescription(
-            f"Snapshot details are {state}."
+        self._advanced_button.setAccessibleName(
+            "Hide advanced snapshot details"
+            if visible
+            else "Show advanced snapshot details"
         )
-        action = "Collapse" if expanded else "Expand"
-        self._toggle.setAccessibleName(f"{action} snapshot details")
-        self._toggle.setToolTip(f"{action} snapshot details")
-        self.expansion_changed.emit(expanded)
+        self.advanced_changed.emit(visible)
 
     def _update_summary_accessibility(self) -> None:
         summary = ", ".join(
             label.text() for label in self._summary_labels.values()
         )
-        self._toggle.setAccessibleDescription(
-            f"Snapshot details are {'expanded' if self.is_expanded else 'collapsed'}. "
-            f"{summary}."
-        )
+        self._advanced_button.setAccessibleDescription(f"{summary}.")
 
     def _emit_apply(self) -> None:
         self._emit_query(self.apply_requested)

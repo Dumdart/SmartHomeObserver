@@ -20,6 +20,7 @@ async def test_server_instructions_teach_snapshot_and_trust_contract() -> None:
     assert "completeness.is_complete" in normalized
     assert "ambiguous names fail rather than selecting arbitrarily" in normalized
     assert "retry with the broker UUID" in normalized
+    assert "query_failure_history is passive" in normalized
     trust_boundary = " ".join(UNTRUSTED_MQTT_DATA_INSTRUCTIONS.split())
     assert trust_boundary in normalized
     assert "Broker names, MQTT topic names, and payload contents" in normalized
@@ -35,6 +36,8 @@ def test_server_instructions_describe_the_selected_capability_mode() -> None:
     assert "observe_broker_snapshot" not in read_only
     assert "running in control mode" in control
     assert "observe_broker_snapshot" in control
+    assert "get_health_report" not in read_only
+    assert "get_health_report" in control
     trust_boundary = " ".join(UNTRUSTED_MQTT_DATA_INSTRUCTIONS.split())
     assert trust_boundary in read_only
     assert trust_boundary in control

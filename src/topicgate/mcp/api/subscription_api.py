@@ -52,7 +52,7 @@ class SubscriptionAPI(MCPApi):
         """Persist and apply an MQTT subscription for a selected broker.
 
         Side effects: Changes local subscription state and may subscribe over MQTT.
-        Required state: The profile must exist; live application requires it active.
+        Required state: The selected profile must exist and already be active.
         Identifiers: broker_id accepts a UUID or unique case-insensitive name;
         topic_filter accepts MQTT wildcards.
         Failures: Fails for invalid brokers, filters, QoS/retain values, duplicate
@@ -82,7 +82,8 @@ class SubscriptionAPI(MCPApi):
         """Replace a persisted MQTT subscription for a selected broker.
 
         Side effects: Changes local state and may unsubscribe/subscribe over MQTT.
-        Required state: original_filter must identify an existing subscription.
+        Required state: The selected profile must be active, and original_filter
+        must identify an existing subscription.
         Identifiers: broker_id accepts a UUID or unique case-insensitive name;
         both filter arguments use MQTT subscription-filter syntax.
         Failures: Fails for invalid brokers or values, a missing original filter,
@@ -114,7 +115,8 @@ class SubscriptionAPI(MCPApi):
         """Remove a persisted MQTT subscription from a selected broker.
 
         Side effects: Deletes local state and may unsubscribe from MQTT.
-        Required state: topic_filter must exactly match an existing subscription.
+        Required state: The selected profile must be active, and topic_filter
+        must exactly match an existing subscription.
         Identifiers: broker_id accepts a UUID or unique case-insensitive name;
         topic_filter is the exact persisted MQTT subscription filter.
         Failures: Fails for invalid brokers, unknown filters, persistence errors,

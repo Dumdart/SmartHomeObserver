@@ -214,12 +214,14 @@ async def test_runtime_preserves_topic_states_across_broker_switches() -> None:
         selected = profile("Local", "local")
         _, brokers, _ = runtime_with((default, selected))
         current_topics = MemoryCurrentTopics()
+        health_sink = MagicMock()
         default_repo = ObserverMqttRepository(
             default.config,
             [],
             broker_id=default.id,
             message_recorder=current_topics,
             current_topics=current_topics,
+            health_sink=health_sink,
         )
         selected_repo = ObserverMqttRepository(
             selected.config,
@@ -227,6 +229,7 @@ async def test_runtime_preserves_topic_states_across_broker_switches() -> None:
             broker_id=selected.id,
             message_recorder=current_topics,
             current_topics=current_topics,
+            health_sink=health_sink,
         )
         default_repo.handle_message(
             None,

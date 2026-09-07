@@ -9,6 +9,7 @@ from topicgate.infrastructure.database.base import Base
 from topicgate.infrastructure.database.database_context import DatabaseContext
 from topicgate.infrastructure.database.migrations import (
     BASELINE_REVISION,
+    EXPECTED_SCHEMA_REVISION,
     _alembic_config,
 )
 import topicgate.infrastructure.database.migrations as migrations
@@ -36,6 +37,30 @@ def test_new_database_is_migrated_to_head(tmp_path) -> None:
         ).one()
     assert revision != BASELINE_REVISION
     assert policy == (1_000, 10_000, None, 256 * 1024 * 1024)
+    database.dispose()
+    engine.dispose()
+
+
+def test_previous_schema_is_upgraded_with_health_tables(tmp_path) -> None:
+    database_path = tmp_path / "pre-health.db"
+    url = f"sqlite:///{database_path.as_posix()}"
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        command.upgrade(_alembic_config(connection), "d2a4c6e8f010")
+    engine.dispose()
+
+    database = DatabaseContext(url)
+    engine = create_engine(url)
+    assert {
+        "health_expectation",
+        "expectation_state",
+        "expectation_failure",
+    }.issubset(inspect(engine).get_table_names())
+    with engine.connect() as connection:
+        revision = connection.exec_driver_sql(
+            "SELECT version_num FROM alembic_version"
+        ).scalar_one()
+    assert revision == EXPECTED_SCHEMA_REVISION
     database.dispose()
     engine.dispose()
 

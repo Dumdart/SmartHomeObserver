@@ -11,6 +11,8 @@ class ObserverRepositoryEventSink(Protocol):
 
     def _handle_disconnected(self) -> None: ...
 
+    def _handle_subscription_result(self, reason_codes: Any) -> None: ...
+
     def handle_message(
         self,
         client: Any,
@@ -63,7 +65,7 @@ class ObserverRepositoryCallbacks(MqttCallbacks):
         reason_codes: Any,
         properties: Any,
     ) -> None:
-        return None
+        self._repository._handle_subscription_result(reason_codes)
 
     async def on_unsubscribe(
         self,

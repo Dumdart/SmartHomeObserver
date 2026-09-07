@@ -2,8 +2,10 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QHeaderView,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
+    QPushButton,
     QTabBar,
     QTableWidget,
     QTableWidgetItem,
@@ -14,7 +16,10 @@ from PySide6.QtWidgets import (
 
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.components.publish_pane import PublishPane
-from topicgate.gui.components.workspace_pane import WorkspacePane
+from topicgate.gui.components.workspace_pane import (
+    WORKSPACE_CONTROL_HEIGHT,
+    WorkspacePane,
+)
 from topicgate.gui.components.topic_metadata import TopicMetadataPane
 from topicgate.gui.icons import edit_icon
 
@@ -25,6 +30,7 @@ class TopicDetailsPane(WorkspacePane):
     topic_selected = Signal(str)
     publish_requested = Signal(str, str, str)
     subscription_editing_changed = Signal(bool)
+    expectations_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__("No topic selected")
@@ -35,29 +41,42 @@ class TopicDetailsPane(WorkspacePane):
         self._context_kind.setHidden(True)
         self.header_layout.insertWidget(1, self._context_kind)
 
+        self._health_badge = QPushButton()
+        self._health_badge.setObjectName("topicHealthBadge")
+        self._health_badge.setAccessibleName("Open topic expectations")
+        self._health_badge.setToolTip("Open this topic's expectation settings")
+        self._health_badge.clicked.connect(self.expectations_requested.emit)
+        self._health_badge.setHidden(True)
+        self.header_layout.insertWidget(2, self._health_badge)
+
         self._edit_button = QToolButton()
         self._edit_button.setObjectName("topicEditButton")
+        self._edit_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._edit_button.setIcon(edit_icon())
         self._edit_button.setIconSize(QSize(14, 14))
         self._edit_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
-        self._edit_button.setText("Edit filter")
+        self._edit_button.setText("Settings")
         self._edit_button.setCheckable(True)
-        self._edit_button.setAccessibleName("Edit filter")
-        self._edit_button.setToolTip("Show filter settings")
+        self._edit_button.setAccessibleName("Topic settings")
+        self._edit_button.setToolTip("Show subscription and expectation settings")
         self._edit_button.toggled.connect(self._toggle_subscription_editing)
-        self.header_layout.addWidget(self._edit_button)
-
         self._mode_tabs = QTabBar()
         self._mode_tabs.setObjectName("topicDetailsMode")
+        self._mode_tabs.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._mode_tabs.setAccessibleName("Topic details mode")
         self._mode_tabs.setDrawBase(False)
         self._mode_tabs.setExpanding(True)
         self._mode_tabs.addTab("Payload")
         self._mode_tabs.addTab("Publish")
         self._mode_tabs.currentChanged.connect(self._set_mode)
-        self.content_layout.addWidget(self._mode_tabs)
+        mode_layout = QHBoxLayout()
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(8)
+        mode_layout.addWidget(self._mode_tabs, 1)
+        mode_layout.addWidget(self._edit_button)
+        self.content_layout.addLayout(mode_layout)
 
         self._payload_content = QWidget()
         self._payload_content.setObjectName("topicPayloadContent")
@@ -166,6 +185,13 @@ class TopicDetailsPane(WorkspacePane):
             accessible_name,
         )
         self._context_kind.setVisible(showing_filter)
+        topic_health = view_model.selected_topic_health
+        self._health_badge.setVisible(bool(topic_health.label) and not showing_filter)
+        self._health_badge.setText(topic_health.label)
+        self._health_badge.setToolTip(topic_health.detail)
+        self._health_badge.setProperty("healthTone", topic_health.tone)
+        self._health_badge.style().unpolish(self._health_badge)
+        self._health_badge.style().polish(self._health_badge)
         self._edit_button.setEnabled(subscription is not None)
         if subscription is None and self._edit_button.isChecked():
             self._edit_button.setChecked(False)
@@ -220,6 +246,13 @@ class TopicDetailsPane(WorkspacePane):
         self._decoded_payload.setPlainText(detail.decoded_payload)
         self._raw_payload.setPlainText(detail.raw_payload)
 
+    @property
+    def is_editing_subscription(self) -> bool:
+        return self._edit_button.isChecked()
+
+    def set_settings_visible(self, visible: bool) -> None:
+        self._edit_button.setChecked(visible)
+
     def focus_payload(self) -> None:
         self._decoded_payload.setFocus(Qt.FocusReason.OtherFocusReason)
 
@@ -244,9 +277,9 @@ class TopicDetailsPane(WorkspacePane):
 
     def _toggle_subscription_editing(self, editing: bool) -> None:
         self._edit_button.setToolTip(
-            "Hide filter settings"
+            "Hide topic settings"
             if editing
-            else "Show filter settings"
+            else "Show subscription and expectation settings"
         )
         self.subscription_editing_changed.emit(editing)
 
