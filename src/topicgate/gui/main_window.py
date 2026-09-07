@@ -148,6 +148,8 @@ class MainWindow(QMainWindow):
         context_layout.setSpacing(8)
         self._settings_tabs = QTabWidget()
         self._settings_tabs.setObjectName("topicSettingsTabs")
+        self._settings_tabs.tabBar().setObjectName("topicSettingsTabs")
+        self._settings_tabs.tabBar().setExpanding(True)
         self._settings_tabs.addTab(self._subscription_settings, "Subscription")
         self._settings_tabs.addTab(self._topic_expectations, "Expectations")
         context_layout.addWidget(self._settings_tabs)

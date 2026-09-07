@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QSpinBox,
     QTabBar,
+    QTabWidget,
     QTableWidget,
     QToolBar,
     QToolButton,
@@ -100,6 +101,32 @@ def test_health_action_opens_broker_scoped_dialog() -> None:
     assert dialog.findChild(QWidget, "brokerExpectationEditor") is not None
     assert dialog.findChild(QTableWidget, "healthHistoryTable") is not None
     dialog.reject()
+    window.close()
+    application.processEvents()
+
+
+def test_settings_and_health_tabs_reuse_visible_topic_tab_style() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    window = MainWindow(
+        MainViewModel(runtime_for(repository), repository.state.topic)
+    )
+    settings_tabs = window.findChild(QTabWidget, "topicSettingsTabs")
+    assert settings_tabs is not None
+    assert settings_tabs.tabBar().objectName() == "topicSettingsTabs"
+    assert settings_tabs.tabBar().expanding()
+
+    action = window.findChild(QAction, "healthAction")
+    assert action is not None
+    action.trigger()
+    application.processEvents()
+    dialog = window.findChild(HealthDialog, "healthDialog")
+    assert dialog is not None
+    health_tabs = dialog.findChild(QTabWidget, "healthTabs")
+    assert health_tabs is not None
+    assert health_tabs.tabBar().objectName() == "healthTabs"
+    assert "QTabBar#topicSettingsTabs::tab:selected" in LIGHT_THEME
+    assert "QTabBar#healthTabs::tab:selected" in LIGHT_THEME
     window.close()
     application.processEvents()
 

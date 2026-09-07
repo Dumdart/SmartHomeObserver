@@ -26,13 +26,13 @@ QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QTreeView:focus { border
 QLineEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled { color: #737b85; background: #f1f3f5; border-color: #c8ced6; }
 QPlainTextEdit#decodedPayload, QPlainTextEdit#rawPayload { background: #fbfcfd; }
 QPlainTextEdit#decodedPayload:focus, QPlainTextEdit#rawPayload:focus { background: #ffffff; }
-QTabBar#topicDetailsMode { background: transparent; }
-QTabBar#topicDetailsMode::tab { color: #4b5563; background: #f3f5f7; border: 1px solid #b8c0ca; padding: 6px 16px; }
-QTabBar#topicDetailsMode::tab:first { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
-QTabBar#topicDetailsMode::tab:last { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
-QTabBar#topicDetailsMode::tab:!first { border-left: 0; }
-QTabBar#topicDetailsMode::tab:hover:!selected { color: #202124; background: #eef2f6; }
-QTabBar#topicDetailsMode::tab:selected { color: #ffffff; background: #405d7a; border-color: #405d7a; font-weight: 650; }
+QTabBar#topicDetailsMode, QTabBar#topicSettingsTabs, QTabBar#healthTabs { background: transparent; }
+QTabBar#topicDetailsMode::tab, QTabBar#topicSettingsTabs::tab, QTabBar#healthTabs::tab { color: #4b5563; background: #f3f5f7; border: 1px solid #b8c0ca; padding: 6px 16px; }
+QTabBar#topicDetailsMode::tab:first, QTabBar#topicSettingsTabs::tab:first, QTabBar#healthTabs::tab:first { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+QTabBar#topicDetailsMode::tab:last, QTabBar#topicSettingsTabs::tab:last, QTabBar#healthTabs::tab:last { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
+QTabBar#topicDetailsMode::tab:!first, QTabBar#topicSettingsTabs::tab:!first, QTabBar#healthTabs::tab:!first { border-left: 0; }
+QTabBar#topicDetailsMode::tab:hover:!selected, QTabBar#topicSettingsTabs::tab:hover:!selected, QTabBar#healthTabs::tab:hover:!selected { color: #202124; background: #eef2f6; }
+QTabBar#topicDetailsMode::tab:selected, QTabBar#topicSettingsTabs::tab:selected, QTabBar#healthTabs::tab:selected { color: #ffffff; background: #405d7a; border-color: #405d7a; font-weight: 650; }
 QLabel#brokerConnectionStatus { border-radius: 9px; padding: 3px 9px; font-weight: 650; }
 QLabel#brokerConnectionStatus[connectionState="connected"] { color: #11653f; background: #dcf7e9; }
 QLabel#brokerConnectionStatus[connectionState="connecting"], QLabel#brokerConnectionStatus[connectionState="reconnecting"] { color: #8a4b00; background: #fff0d5; }

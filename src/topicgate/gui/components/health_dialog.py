@@ -40,6 +40,7 @@ class HealthDialog(QDialog):
         layout = QVBoxLayout(self)
         self._tabs = QTabWidget()
         self._tabs.setObjectName("healthTabs")
+        self._tabs.tabBar().setObjectName("healthTabs")
         self._tabs.addTab(self._current_page(), "Current Health")
         self._tabs.addTab(
             ExpectationEditor(view_model, "broker"),
