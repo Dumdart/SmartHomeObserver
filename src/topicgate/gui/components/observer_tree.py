@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QScrollArea,
     QToolButton,
     QTreeView,
     QWidget,
@@ -14,7 +13,6 @@ from PySide6.QtWidgets import (
 
 from topicgate.core.models.subscription import Subscription
 from topicgate.gui.components.workspace_pane import WorkspacePane
-from topicgate.gui.components.snapshot_panel import SnapshotPanel
 from topicgate.gui.icons import delete_icon
 from topicgate.presentation.topic_presentation import TopicTreeNode
 
@@ -27,14 +25,12 @@ class ObserverTreePane(WorkspacePane):
     topic_selected = Signal(str)
     add_filter_requested = Signal()
     remove_filter_requested = Signal(object)
-    snapshot_apply_requested = Signal(object)
-    snapshot_reset_requested = Signal()
-    reconnect_observe_requested = Signal(object)
     empty_state_action_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__("Observer Tree")
         self._items: dict[str, QStandardItem] = {}
+        self._rendering = False
 
         controls = QHBoxLayout()
         self._search_edit = QLineEdit()
@@ -83,6 +79,8 @@ class ObserverTreePane(WorkspacePane):
         self._tree.selectionModel().currentChanged.connect(
             self._selection_changed
         )
+        self._tree.clicked.connect(self._topic_activated)
+        self._tree.activated.connect(self._topic_activated)
         self._search_edit.textChanged.connect(self._proxy.setFilterFixedString)
         self.content_layout.addWidget(self._tree, 1)
         self._empty_state = QFrame()
@@ -102,33 +100,6 @@ class ObserverTreePane(WorkspacePane):
         )
         empty_layout.addWidget(self._empty_state_action)
         self.content_layout.addWidget(self._empty_state)
-        self.snapshot_panel = SnapshotPanel()
-        self.snapshot_panel.apply_requested.connect(
-            self.snapshot_apply_requested.emit
-        )
-        self.snapshot_panel.reset_requested.connect(
-            self.snapshot_reset_requested.emit
-        )
-        self.snapshot_panel.reconnect_observe_requested.connect(
-            self.reconnect_observe_requested.emit
-        )
-        snapshot_scroll = QScrollArea()
-        snapshot_scroll.setObjectName("snapshotPanelScrollArea")
-        snapshot_scroll.setWidgetResizable(True)
-        snapshot_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        snapshot_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        snapshot_scroll.setMinimumHeight(68)
-        snapshot_scroll.setMaximumHeight(68)
-        snapshot_scroll.setWidget(self.snapshot_panel)
-
-        def resize_snapshot(expanded: bool) -> None:
-            snapshot_scroll.setMinimumHeight(300 if expanded else 68)
-            snapshot_scroll.setMaximumHeight(360 if expanded else 68)
-
-        self.snapshot_panel.expansion_changed.connect(resize_snapshot)
-        self.content_layout.addWidget(snapshot_scroll)
 
     def render(
         self,
@@ -136,25 +107,31 @@ class ObserverTreePane(WorkspacePane):
         selected_topic: str,
         subscriptions: tuple[Subscription, ...] = (),
     ) -> None:
-        expanded_paths = {
-            path
-            for path, item in self._items.items()
-            if self._tree.isExpanded(self._proxy.mapFromSource(item.index()))
-        }
-        self._model.removeRows(0, self._model.rowCount())
-        self._items.clear()
+        self._rendering = True
+        try:
+            expanded_paths = {
+                path
+                for path, item in self._items.items()
+                if self._tree.isExpanded(
+                    self._proxy.mapFromSource(item.index())
+                )
+            }
+            self._model.removeRows(0, self._model.rowCount())
+            self._items.clear()
 
-        for topic in topic_paths:
-            self._add_topic(topic)
+            for topic in topic_paths:
+                self._add_topic(topic)
 
-        for subscription in subscriptions:
-            self._add_remove_button(subscription)
+            for subscription in subscriptions:
+                self._add_remove_button(subscription)
 
-        if expanded_paths:
-            self._restore_expanded_paths(expanded_paths)
-        else:
-            self._tree.expandToDepth(1)
-        self.select_topic(selected_topic)
+            if expanded_paths:
+                self._restore_expanded_paths(expanded_paths)
+            else:
+                self._tree.expandToDepth(1)
+            self.select_topic(selected_topic)
+        finally:
+            self._rendering = False
 
     def render_empty_state(
         self,
@@ -185,12 +162,6 @@ class ObserverTreePane(WorkspacePane):
                 "No values match the current snapshot filters. Clear filters or capture a new snapshot.",
                 "clear-filters",
                 "Clear filters",
-            )
-        elif has_cached_values:
-            message, action, label = (
-                "Showing stored values only. Reconnect to fetch current values.",
-                "observe",
-                "Reconnect & observe",
             )
         else:
             message, action, label = (
@@ -405,7 +376,16 @@ class ObserverTreePane(WorkspacePane):
         current: QModelIndex,
         _previous: QModelIndex,
     ) -> None:
+        if self._rendering:
+            return
         source_index = self._proxy.mapToSource(current)
+        topic = self._model.data(source_index, TOPIC_ROLE) or ""
+        self.topic_selected.emit(str(topic))
+
+    def _topic_activated(self, index: QModelIndex) -> None:
+        if self._rendering:
+            return
+        source_index = self._proxy.mapToSource(index)
         topic = self._model.data(source_index, TOPIC_ROLE) or ""
         self.topic_selected.emit(str(topic))
 

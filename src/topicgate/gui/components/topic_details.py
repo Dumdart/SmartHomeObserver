@@ -229,6 +229,10 @@ class TopicDetailsPane(WorkspacePane):
         self._decoded_payload.setPlainText(detail.decoded_payload)
         self._raw_payload.setPlainText(detail.raw_payload)
 
+    @property
+    def is_editing_subscription(self) -> bool:
+        return self._edit_button.isChecked()
+
     def focus_payload(self) -> None:
         self._decoded_payload.setFocus(Qt.FocusReason.OtherFocusReason)
 

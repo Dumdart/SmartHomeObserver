@@ -9,11 +9,10 @@ QMessageBox QLabel { background: transparent; color: #202124; }
 QFrame[workspacePane="true"] { background: #ffffff; border: 1px solid #c8ced6; border-radius: 8px; }
 QFrame#observerEmptyState { background: #f8fafc; border: 1px solid #c8ced6; border-radius: 5px; }
 QLabel#observerEmptyStateText { background: transparent; color: #4b5563; }
-QWidget#snapshotPanel, QWidget#snapshotContent, QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { background: #ffffff; }
-QFrame#snapshotHeader { background: #fbfcfd; border: 1px solid #c8ced6; border-radius: 5px; }
+QWidget#snapshotPanel, QWidget#snapshotAdvancedContent, QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { background: #ffffff; }
 QScrollArea#snapshotPanelScrollArea { background: #ffffff; }
-QToolButton#snapshotToggleButton { border: 0; background: transparent; font-weight: 650; padding: 3px 5px; }
-QToolButton#snapshotToggleButton:hover { background: #eef2f6; }
+QToolButton#snapshotAdvancedButton { border: 0; background: transparent; font-weight: 650; padding: 3px 5px; }
+QToolButton#snapshotAdvancedButton:hover { background: #eef2f6; }
 QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { border: 1px solid #c8ced6; border-radius: 5px; margin-top: 8px; padding-top: 8px; }
 QGroupBox#snapshotControls::title, QGroupBox#snapshotHealthPanel::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; color: #4b5563; font-weight: 650; }
 QLabel#sectionTitle, QLabel#workspaceHeading { color: #4b5563; font-weight: 650; }

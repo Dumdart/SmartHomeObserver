@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QScrollArea,
     QSplitter,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -42,6 +44,7 @@ from topicgate.gui.components.workspace_pane import (
     WORKSPACE_CONTROL_HEIGHT,
     WorkspacePane,
 )
+from topicgate.gui.components.snapshot_panel import SnapshotPanel
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.settings_migration import migrate_legacy_settings
 from topicgate.gui.theme import LIGHT_THEME
@@ -90,6 +93,7 @@ class MainWindow(QMainWindow):
 
     def _create_workspace(self) -> None:
         self._observer_tree = ObserverTreePane()
+        self._snapshot_panel = SnapshotPanel()
         self._topic_details = TopicDetailsPane()
         self._broker_connection = BrokerConnectionPane()
         self._subscription_settings = SubscriptionSettingsPane()
@@ -98,8 +102,8 @@ class MainWindow(QMainWindow):
             "topic",
         )
         self._onboarding = OnboardingPanel()
-        self._observer_tree.topic_selected.connect(self._view_model.select_topic)
-        self._topic_details.topic_selected.connect(self._view_model.select_topic)
+        self._observer_tree.topic_selected.connect(self._select_topic)
+        self._topic_details.topic_selected.connect(self._select_topic)
         self._topic_details.subscription_editing_changed.connect(
             self._set_context_panel_visible
         )
@@ -109,16 +113,16 @@ class MainWindow(QMainWindow):
         self._observer_tree.remove_filter_requested.connect(
             self._remove_subscription
         )
-        self._observer_tree.snapshot_apply_requested.connect(
+        self._snapshot_panel.apply_requested.connect(
             self._apply_snapshot_query
         )
-        self._observer_tree.snapshot_reset_requested.connect(
+        self._snapshot_panel.reset_requested.connect(
             self._reset_snapshot_query
         )
-        self._observer_tree.reconnect_observe_requested.connect(
+        self._snapshot_panel.reconnect_observe_requested.connect(
             self._confirm_reconnect_and_observe
         )
-        self._observer_tree.snapshot_panel.validation_failed.connect(
+        self._snapshot_panel.validation_failed.connect(
             lambda message: QMessageBox.warning(
                 self,
                 "Invalid snapshot controls",
@@ -177,7 +181,19 @@ class MainWindow(QMainWindow):
         self._topic_inspector.setObjectName("topicInspector")
         inspector_layout = QVBoxLayout(self._topic_inspector)
         inspector_layout.setContentsMargins(0, 0, 0, 0)
-        inspector_layout.addWidget(self._topic_details)
+        self._inspector_stack = QStackedWidget()
+        self._inspector_stack.setObjectName("inspectorStack")
+        snapshot_scroll = QScrollArea()
+        snapshot_scroll.setObjectName("snapshotPanelScrollArea")
+        snapshot_scroll.setWidgetResizable(True)
+        snapshot_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        snapshot_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        snapshot_scroll.setWidget(self._snapshot_panel)
+        self._inspector_stack.addWidget(snapshot_scroll)
+        self._inspector_stack.addWidget(self._topic_details)
+        inspector_layout.addWidget(self._inspector_stack)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setObjectName("workspaceSplitter")
@@ -202,7 +218,26 @@ class MainWindow(QMainWindow):
         self._context_panel.setHidden(True)
 
     def _set_context_panel_visible(self, visible: bool) -> None:
-        self._context_panel.setVisible(visible)
+        self._context_panel.setVisible(
+            visible and self._inspector_stack.currentWidget() is self._topic_details
+        )
+
+    def _show_snapshot(self) -> None:
+        self._inspector_stack.setCurrentIndex(0)
+        self._context_panel.setHidden(True)
+
+    def _show_topic_details(self) -> None:
+        self._inspector_stack.setCurrentWidget(self._topic_details)
+        self._context_panel.setVisible(
+            self._topic_details.is_editing_subscription
+        )
+
+    def _select_topic(self, topic: str) -> None:
+        if topic:
+            self._show_topic_details()
+        else:
+            self._show_snapshot()
+        self._view_model.select_topic(topic)
 
     def _create_actions(self) -> None:
         self._broker_settings_action = QAction("&Edit broker profile...", self)
@@ -267,6 +302,9 @@ class MainWindow(QMainWindow):
         )
         self._broker_connection.disconnect_requested.connect(
             lambda: self._run_async(self._view_model.disconnect_from_broker())
+        )
+        self._broker_connection.inspect_snapshot_requested.connect(
+            self._show_snapshot
         )
 
         self._add_filter_action = QAction("Add filter", self)
@@ -406,7 +444,7 @@ class MainWindow(QMainWindow):
         self._view_model.log_message.connect(self._log_dock.append_message)
 
     def _render_all(self) -> None:
-        self._observer_tree.snapshot_panel.render_query(
+        self._snapshot_panel.render_query(
             self._view_model.snapshot_query
         )
         self._render_tree()
@@ -422,7 +460,7 @@ class MainWindow(QMainWindow):
             self._view_model.topic,
             self._view_model.subscriptions,
         )
-        self._observer_tree.snapshot_panel.render_health(
+        self._snapshot_panel.render_health(
             self._view_model.snapshot_health
         )
         snapshot = self._view_model.broker_snapshot
@@ -443,6 +481,8 @@ class MainWindow(QMainWindow):
     def _render_details(self) -> None:
         self._topic_details.render(self._view_model)
         self._topic_expectations.render()
+        if not self._view_model.topic:
+            self._show_snapshot()
 
     def _render_settings(self) -> None:
         self._subscription_settings.render(
@@ -456,7 +496,7 @@ class MainWindow(QMainWindow):
         if self._view_model.connection_status == "connected":
             self._settings.setValue("onboarding/connectionTested", True)
         self._render_connection_controls()
-        self._observer_tree.snapshot_panel.render_connection_status(
+        self._snapshot_panel.render_connection_status(
             self._view_model.connection_status
         )
         self._topic_details.render(self._view_model)
@@ -496,7 +536,7 @@ class MainWindow(QMainWindow):
             or self._view_model.is_busy("connection")
             or self._view_model.is_busy("stored-observations")
         )
-        self._observer_tree.snapshot_panel.set_busy(
+        self._snapshot_panel.set_busy(
             exclusive_busy
         )
         self._observer_tree.set_connection_busy(exclusive_busy)
@@ -713,7 +753,7 @@ class MainWindow(QMainWindow):
             selected_query = (
                 query
                 if query is not None
-                else self._observer_tree.snapshot_panel.query
+                else self._snapshot_panel.query
             )
         except ValueError as error:
             QMessageBox.warning(
@@ -856,8 +896,11 @@ class MainWindow(QMainWindow):
         profile_id: UUID,
         mqtt_config: MqttConfig,
     ) -> None:
+        previous_profile_id = self._view_model.active_broker_profile.id
         try:
             await self._view_model.activate_broker_profile(profile_id, mqtt_config)
+            if self._view_model.active_broker_profile.id != previous_profile_id:
+                self._show_snapshot()
         finally:
             self._render_connection_controls()
             self._observer_tree.set_connection_busy(False)
@@ -1008,6 +1051,10 @@ class MainWindow(QMainWindow):
         if selected_topic:
             self._view_model.select_topic(selected_topic)
         self._restore_snapshot_preferences()
+        if self._view_model.topic:
+            self._show_topic_details()
+        else:
+            self._show_snapshot()
         log_visible = self._settings.value(
             "workspace/logVisible",
             False,
@@ -1039,7 +1086,7 @@ class MainWindow(QMainWindow):
             self._view_model.apply_snapshot_query(query)
         except (TypeError, ValueError):
             self._view_model.reset_snapshot_query()
-        self._observer_tree.snapshot_panel.set_expanded(
+        self._snapshot_panel.set_advanced_visible(
             self._settings.value("workspace/snapshotExpanded", False, type=bool)
         )
 
@@ -1075,7 +1122,7 @@ class MainWindow(QMainWindow):
         )
         self._settings.setValue(
             "workspace/snapshotExpanded",
-            self._observer_tree.snapshot_panel.is_expanded,
+            self._snapshot_panel.is_advanced_visible,
         )
         self._save_snapshot_preferences()
         self._settings.sync()

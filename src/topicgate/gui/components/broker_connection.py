@@ -198,6 +198,7 @@ class BrokerConnectionPane(WorkspacePane):
     connect_requested = Signal()
     reconnect_requested = Signal()
     disconnect_requested = Signal()
+    inspect_snapshot_requested = Signal()
 
     _STATUS_LABELS = {
         "connected": "Connected",
@@ -228,8 +229,8 @@ class BrokerConnectionPane(WorkspacePane):
         self.header_layout.addWidget(self._status_badge)
         self.header_layout.addStretch(1)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
+        broker_row = QHBoxLayout()
+        broker_row.setSpacing(8)
         self._profile_selector = BrokerProfileSelector()
         self._profile_selector.setObjectName("connectionBrokerSelector")
         self._profile_selector.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
@@ -248,22 +249,30 @@ class BrokerConnectionPane(WorkspacePane):
             self.add_profile_requested.emit
         )
 
-        self._disconnect_button = QPushButton("Disconnect")
-        self._disconnect_button.setObjectName("brokerDisconnectButton")
-        self._disconnect_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
-        self._disconnect_button.clicked.connect(
-            self.disconnect_requested.emit
+        self._inspect_snapshot_button = QPushButton("Inspect snapshot")
+        self._inspect_snapshot_button.setObjectName("inspectSnapshotButton")
+        self._inspect_snapshot_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._inspect_snapshot_button.setAccessibleName("Inspect broker snapshot")
+        self._inspect_snapshot_button.clicked.connect(
+            self.inspect_snapshot_requested.emit
         )
+
         self._lifecycle_button = QPushButton("Connect")
         self._lifecycle_button.setObjectName("brokerLifecycleButton")
         self._lifecycle_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._lifecycle_button.setProperty("primary", True)
         self._lifecycle_button.clicked.connect(self._request_lifecycle_operation)
 
-        row.addWidget(self._profile_selector, 1)
-        row.addWidget(self._disconnect_button)
-        row.addWidget(self._lifecycle_button)
-        self.content_layout.addLayout(row)
+        broker_row.addWidget(self._profile_selector, 1)
+        broker_row.addWidget(self._inspect_snapshot_button)
+        self.content_layout.addLayout(broker_row)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addStretch(1)
+        action_row.addWidget(self._lifecycle_button)
+        self.content_layout.addLayout(action_row)
+        self.setMaximumHeight(152)
 
     def render(self, view_model: MainViewModel, busy: bool = False) -> None:
         profiles = view_model.broker_profiles
@@ -287,10 +296,6 @@ class BrokerConnectionPane(WorkspacePane):
             management_enabled,
         )
         self._profile_selector.setEnabled(management_enabled)
-        self._disconnect_button.setEnabled(
-            self._status in {"connecting", "connected", "reconnecting"}
-            and not busy
-        )
         lifecycle_text, lifecycle_enabled = self._lifecycle_presentation(busy)
         self._lifecycle_button.setText(lifecycle_text)
         self._lifecycle_button.setEnabled(lifecycle_enabled)
@@ -306,7 +311,7 @@ class BrokerConnectionPane(WorkspacePane):
         if self._status == "disconnected":
             self.connect_requested.emit()
         elif self._status == "connected":
-            self.reconnect_requested.emit()
+            self.disconnect_requested.emit()
 
     def _lifecycle_presentation(self, busy: bool) -> tuple[str, bool]:
         if self._status == "connecting":
@@ -314,5 +319,5 @@ class BrokerConnectionPane(WorkspacePane):
         if self._status == "reconnecting":
             return "Reconnecting…", False
         if self._status == "connected":
-            return "Reconnect", not busy
+            return "Disconnect", not busy
         return "Connect", not busy
