@@ -143,7 +143,7 @@ class ControlOperationService:
         token: str,
         stopped: threading.Event,
     ) -> None:
-        interval = max(0.01, self._lease_seconds / 3)
+        interval = max(0.01, self._lease_seconds / 10)
         while not stopped.wait(interval):
             with self._database.transaction() as session:
                 session.execute(
