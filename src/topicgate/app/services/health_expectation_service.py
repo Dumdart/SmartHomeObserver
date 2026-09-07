@@ -16,6 +16,7 @@ from topicgate.core.models.connection_status import ConnectionStatus
 from topicgate.core.models.current_topic import CurrentTopic
 from topicgate.core.models.health import (
     BrokerTarget,
+    ConditionEvaluationContext,
     ConditionResult,
     DiagnosticReport,
     ExpectationEvaluation,
@@ -29,6 +30,10 @@ from topicgate.core.models.health import (
     ObservationHealthFinding,
     TopicTarget,
 )
+from topicgate.core.models.health.condition import FreshnessCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
+from topicgate.core.models.health.condition import TopicAbsentCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.health_action_context import HealthActionContext
 from topicgate.core.models.subscription import Subscription
 from topicgate.core.models.topic_message import TopicMessage
@@ -43,6 +48,12 @@ BrokerMetadataReader = Callable[[UUID], ObserverRepoMetadata]
 CurrentTopicsReader = Callable[[UUID], tuple[CurrentTopic, ...]]
 
 DEFAULT_STALE_AFTER_SECONDS = 300.0
+TOPIC_STATE_CONDITIONS = (
+    TopicExistsCondition,
+    TopicAbsentCondition,
+    FreshnessCondition,
+)
+TOPIC_ONLY_CONDITIONS = (NumericRangeCondition, *TOPIC_STATE_CONDITIONS)
 
 
 class HealthExpectationService:
@@ -146,6 +157,7 @@ class HealthExpectationService:
                 # message delivery already owns those state transitions.
                 persist_result = (
                     isinstance(expectation.target, BrokerTarget)
+                    or isinstance(expectation.condition, TOPIC_STATE_CONDITIONS)
                     or result.failure_code
                     in {
                         "SUBSCRIPTION_UNAVAILABLE",
@@ -197,19 +209,29 @@ class HealthExpectationService:
         *,
         observable: bool = True,
     ) -> ExpectationEvaluation:
-        result = (
-            expectation.condition.handle_condition(topic_msg.payload)
-            if observable and not topic_msg.is_truncated
-            else ConditionResult(
+        if not observable:
+            result = ConditionResult(
                 status=HealthStatus.UNKNOWN,
                 evidence_complete=False,
-                evidence_summary=(
-                    "Message payload was truncated."
-                    if topic_msg.is_truncated
-                    else "Topic is not covered by an active subscription."
-                ),
+                evidence_summary="Topic is not covered by an active subscription.",
             )
-        )
+        elif (
+            topic_msg.is_truncated
+            and not isinstance(expectation.condition, TOPIC_STATE_CONDITIONS)
+        ):
+            result = ConditionResult(
+                status=HealthStatus.UNKNOWN,
+                evidence_complete=False,
+                evidence_summary="Message payload was truncated.",
+            )
+        else:
+            result = expectation.condition.evaluate(
+                ConditionEvaluationContext(
+                    payload=topic_msg.payload,
+                    received_at=topic_msg.received_at,
+                    evaluated_at=topic_msg.received_at,
+                )
+            )
 
         return self._evaluate_condition_result(
             expectation,
@@ -288,8 +310,24 @@ class HealthExpectationService:
         stale_after_seconds: float,
     ) -> ConditionResult:
         if isinstance(expectation.target, BrokerTarget):
+            if isinstance(expectation.condition, TOPIC_ONLY_CONDITIONS):
+                return ConditionResult(
+                    status=HealthStatus.UNKNOWN,
+                    failure_code="UNSUPPORTED_CONDITION_TARGET",
+                    evidence_summary=(
+                        "Numeric range, existence, and freshness conditions "
+                        "require a topic target."
+                    ),
+                    evidence_complete=False,
+                )
             status = _status_value(metadata.connection_status)
-            return expectation.condition.handle_condition(status)
+            return expectation.condition.evaluate(
+                ConditionEvaluationContext(
+                    payload=status,
+                    received_at=None,
+                    evaluated_at=evaluated_at,
+                )
+            )
 
         if not isinstance(expectation.target, TopicTarget):
             return ConditionResult(
@@ -314,12 +352,27 @@ class HealthExpectationService:
 
         current = current_topics.get(expectation.target.topic)
         if current is None:
+            if isinstance(expectation.condition, TOPIC_STATE_CONDITIONS):
+                return expectation.condition.evaluate(
+                    ConditionEvaluationContext(
+                        payload=None,
+                        received_at=None,
+                        evaluated_at=evaluated_at,
+                    )
+                )
             return ConditionResult(
                 status=HealthStatus.UNKNOWN,
                 failure_code="TOPIC_NEVER_OBSERVED",
                 evidence_summary="Topic has never been observed.",
                 evidence_complete=False,
             )
+        context = ConditionEvaluationContext(
+            payload=current.message.payload,
+            received_at=current.message.received_at,
+            evaluated_at=evaluated_at,
+        )
+        if isinstance(expectation.condition, TOPIC_STATE_CONDITIONS):
+            return expectation.condition.evaluate(context)
         age_seconds = max(
             0.0,
             (evaluated_at - _as_utc(current.message.received_at)).total_seconds(),
@@ -340,7 +393,7 @@ class HealthExpectationService:
                 evidence_summary="Message payload was truncated.",
                 evidence_complete=False,
             )
-        return expectation.condition.handle_condition(current.message.payload)
+        return expectation.condition.evaluate(context)
 
     def _observation_health(
         self,

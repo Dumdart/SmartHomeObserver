@@ -1,5 +1,12 @@
 from topicgate.core.models.health.condition import Condition
+from topicgate.core.models.health.condition import ConditionEvaluationContext
 from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import FreshnessCondition
+from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
+from topicgate.core.models.health.condition import OutSideCondition
+from topicgate.core.models.health.condition import TopicAbsentCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.condition_result import ConditionResult
 from topicgate.core.models.health.diagnostic_report import DiagnosticReport
 from topicgate.core.models.health.diagnostic_report import ObservationFindingCode
@@ -22,9 +29,14 @@ __all__ = [
     "ActionKind",
     "BrokerTarget",
     "Condition",
+    "ConditionEvaluationContext",
     "ConditionResult",
     "DiagnosticReport",
     "EqualCondition",
+    "FreshnessCondition",
+    "InRangeCondition",
+    "NumericRangeCondition",
+    "OutSideCondition",
     "ExpectationEvaluation",
     "ExpectationFailure",
     "ExpectationState",
@@ -37,4 +49,6 @@ __all__ = [
     "ObservationHealth",
     "ObservationHealthFinding",
     "TopicTarget",
+    "TopicAbsentCondition",
+    "TopicExistsCondition",
 ]

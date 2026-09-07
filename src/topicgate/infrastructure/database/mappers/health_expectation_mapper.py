@@ -1,11 +1,16 @@
 import base64
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
 from topicgate.core.models.health.condition import Condition
 from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import FreshnessCondition
 from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
 from topicgate.core.models.health.condition import OutSideCondition
+from topicgate.core.models.health.condition import TopicAbsentCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.expectation_target import BrokerTarget
 from topicgate.core.models.health.expectation_target import ExpectationTarget
 from topicgate.core.models.health.expectation_target import TopicTarget
@@ -96,6 +101,21 @@ class HealthExpectationMapper:
                 "expected_values",
                 condition.expected_values,
             )
+        if isinstance(condition, NumericRangeCondition):
+            return {
+                "kind": "numeric_range",
+                "minimum": str(condition.minimum),
+                "maximum": str(condition.maximum),
+            }
+        if isinstance(condition, TopicExistsCondition):
+            return {"kind": "topic_exists"}
+        if isinstance(condition, TopicAbsentCondition):
+            return {"kind": "topic_absent"}
+        if isinstance(condition, FreshnessCondition):
+            return {
+                "kind": "fresh_within",
+                "max_age_seconds": condition.max_age_seconds,
+            }
         raise ValueError(
             f"Unsupported expectation condition: {type(condition).__name__}"
         )
@@ -125,6 +145,41 @@ class HealthExpectationMapper:
                 "expected_values",
             )
             return OutSideCondition(expected_values=expected_values)
+        if kind == "numeric_range":
+            HealthExpectationMapper._require_condition_keys(
+                value,
+                {"kind", "minimum", "maximum"},
+            )
+            return NumericRangeCondition(
+                minimum=HealthExpectationMapper._required_decimal(
+                    value,
+                    "minimum",
+                ),
+                maximum=HealthExpectationMapper._required_decimal(
+                    value,
+                    "maximum",
+                ),
+            )
+        if kind == "topic_exists":
+            HealthExpectationMapper._require_condition_keys(value, {"kind"})
+            return TopicExistsCondition()
+        if kind == "topic_absent":
+            HealthExpectationMapper._require_condition_keys(value, {"kind"})
+            return TopicAbsentCondition()
+        if kind == "fresh_within":
+            HealthExpectationMapper._require_condition_keys(
+                value,
+                {"kind", "max_age_seconds"},
+            )
+            max_age_seconds = value.get("max_age_seconds")
+            if isinstance(max_age_seconds, bool) or not isinstance(
+                max_age_seconds,
+                (int, float),
+            ):
+                raise ValueError(
+                    "Expectation max_age_seconds must be a number."
+                )
+            return FreshnessCondition(float(max_age_seconds))
         raise ValueError(
             "Unsupported expectation condition kind: "
             f"{kind!r}"
@@ -221,3 +276,28 @@ class HealthExpectationMapper:
             return raw_value if isinstance(raw_value, UUID) else UUID(raw_value)
         except ValueError as error:
             raise ValueError(f"Expectation {field_name} must be a UUID.") from error
+
+    @staticmethod
+    def _required_decimal(value: dict[str, Any], field_name: str) -> Decimal:
+        raw_value = value.get(field_name)
+        if not isinstance(raw_value, str):
+            raise ValueError(f"Expectation {field_name} must be a string.")
+        try:
+            parsed = Decimal(raw_value)
+        except InvalidOperation as error:
+            raise ValueError(
+                f"Expectation {field_name} must be a decimal number."
+            ) from error
+        if not parsed.is_finite():
+            raise ValueError(f"Expectation {field_name} must be finite.")
+        return parsed
+
+    @staticmethod
+    def _require_condition_keys(
+        value: dict[str, Any],
+        allowed_keys: set[str],
+    ) -> None:
+        unexpected = set(value) - allowed_keys
+        if unexpected:
+            names = ", ".join(sorted(unexpected))
+            raise ValueError(f"Unexpected expectation condition fields: {names}.")

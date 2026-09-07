@@ -31,6 +31,11 @@ from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.app.topicgate_runtime import TopicGateRuntime
 from topicgate.app.services.broker_snapshot_service import BrokerSnapshotService
 from topicgate.core.models.health import EqualCondition, TopicTarget
+from topicgate.core.models.health import FreshnessCondition
+from topicgate.core.models.health import NumericRangeCondition
+from topicgate.core.models.health import TopicAbsentCondition
+from topicgate.core.models.health import TopicExistsCondition
+from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.gui.main_view_model import MainViewModel, mqtt_filter_matches
 from topicgate.presentation.snapshot_presentation import SnapshotQuery
 from topicgate.core.payload_limits import (
@@ -83,6 +88,60 @@ def test_expectation_editor_rejects_wildcard_topic_targets() -> None:
             name="Status",
             description="",
             expected_values="online",
+        )
+
+
+@pytest.mark.parametrize(
+    ("condition_kind", "expected_values", "expected_type"),
+    [
+        (ConditionKind.NUMERIC_RANGE, ("1.5", "3"), NumericRangeCondition),
+        (ConditionKind.TOPIC_EXISTS, (), TopicExistsCondition),
+        (ConditionKind.TOPIC_ABSENT, (), TopicAbsentCondition),
+        (ConditionKind.FRESH_WITHIN, ("60",), FreshnessCondition),
+    ],
+)
+def test_expectation_editor_state_builds_additional_topic_conditions(
+    condition_kind,
+    expected_values,
+    expected_type,
+) -> None:
+    runtime = runtime_for(FakeObserverRepository())
+    management = MagicMock()
+    management.list_expectations.return_value = ()
+    management.create_expectation.side_effect = lambda item, **_kwargs: item
+    view_model = MainViewModel(
+        runtime,
+        "devices/status",
+        expectation_management_service=management,
+    )
+
+    created = view_model.save_expectation(
+        target_kind="topic",
+        expectation_id=None,
+        name="Condition",
+        description="",
+        condition_kind=condition_kind,
+        expected_values=expected_values,
+        encoding="base64",
+    )
+
+    assert isinstance(created.condition, expected_type)
+
+
+def test_expectation_editor_state_rejects_topic_only_broker_condition() -> None:
+    view_model = MainViewModel(
+        runtime_for(FakeObserverRepository()),
+        expectation_management_service=MagicMock(),
+    )
+
+    with pytest.raises(ValueError, match="require a topic target"):
+        view_model.save_expectation(
+            target_kind="broker",
+            expectation_id=None,
+            name="Fresh broker",
+            description="",
+            condition_kind=ConditionKind.FRESH_WITHIN,
+            expected_values=("60",),
         )
 
 

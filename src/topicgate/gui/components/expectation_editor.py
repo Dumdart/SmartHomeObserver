@@ -25,8 +25,12 @@ from topicgate.core.models.connection_status import ConnectionStatus
 from topicgate.core.models.health import ActionKind, HealthExpectation
 from topicgate.core.models.health.condition import Condition
 from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import FreshnessCondition
 from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
 from topicgate.core.models.health.condition import OutSideCondition
+from topicgate.core.models.health.condition import TopicAbsentCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.presentation.health_presentation import finding_result_label
@@ -88,6 +92,7 @@ class ExpectationEditor(QWidget):
         self._form_container = QWidget()
         self._form_container.setObjectName("expectationEditingControls")
         form = QFormLayout(self._form_container)
+        self._form = form
         self._name = QLineEdit()
         self._name.setObjectName("expectationName")
         self._description = QLineEdit()
@@ -111,6 +116,23 @@ class ExpectationEditor(QWidget):
         self._condition_kind.addItem("Equals", ConditionKind.EQUAL)
         self._condition_kind.addItem("One of", ConditionKind.IN_RANGE)
         self._condition_kind.addItem("Not one of", ConditionKind.OUTSIDE)
+        if target_kind == "topic":
+            self._condition_kind.addItem(
+                "Number between",
+                ConditionKind.NUMERIC_RANGE,
+            )
+            self._condition_kind.addItem(
+                "Topic exists",
+                ConditionKind.TOPIC_EXISTS,
+            )
+            self._condition_kind.addItem(
+                "Topic does not exist",
+                ConditionKind.TOPIC_ABSENT,
+            )
+            self._condition_kind.addItem(
+                "Fresh within",
+                ConditionKind.FRESH_WITHIN,
+            )
         self._condition_kind.currentIndexChanged.connect(
             self._condition_kind_changed
         )
@@ -366,6 +388,14 @@ class ExpectationEditor(QWidget):
             return f"One of: {rendered}"
         if isinstance(condition, OutSideCondition):
             return f"Not one of: {rendered}"
+        if isinstance(condition, NumericRangeCondition):
+            return f"Between {condition.minimum} and {condition.maximum}"
+        if isinstance(condition, TopicExistsCondition):
+            return "Topic exists"
+        if isinstance(condition, TopicAbsentCondition):
+            return "Topic does not exist"
+        if isinstance(condition, FreshnessCondition):
+            return f"Fresh within {condition.max_age_seconds:g} seconds"
         return type(condition).__name__
 
     def _condition_kind_changed(self, index: int) -> None:
@@ -375,6 +405,11 @@ class ExpectationEditor(QWidget):
         is_multiple = condition_kind in {
             ConditionKind.IN_RANGE,
             ConditionKind.OUTSIDE,
+            ConditionKind.NUMERIC_RANGE,
+        }
+        has_no_value = condition_kind in {
+            ConditionKind.TOPIC_EXISTS,
+            ConditionKind.TOPIC_ABSENT,
         }
         if is_multiple and not self._expected_values.toPlainText():
             current_value = self._expected.currentText()
@@ -386,9 +421,38 @@ class ExpectationEditor(QWidget):
                 self._expected.setEditText(first_value[0])
         self._expected_editor.setCurrentIndex(1 if is_multiple else 0)
         self._expected_editor.setMaximumHeight(90 if is_multiple else 32)
-        if is_multiple:
+        self._expected_editor.setVisible(not has_no_value)
+        expected_label = self._form.labelForField(self._expected_editor)
+        if expected_label is not None:
+            expected_label.setVisible(not has_no_value)
+            expected_label.setText(
+                "Max age (seconds)"
+                if condition_kind is ConditionKind.FRESH_WITHIN
+                else "Expected"
+            )
+        uses_payload_encoding = condition_kind in {
+            ConditionKind.EQUAL,
+            ConditionKind.IN_RANGE,
+            ConditionKind.OUTSIDE,
+        }
+        if self._target_kind == "topic":
+            self._encoding.setVisible(uses_payload_encoding)
+            encoding_label = self._form.labelForField(self._encoding)
+            if encoding_label is not None:
+                encoding_label.setVisible(uses_payload_encoding)
+        if condition_kind is ConditionKind.NUMERIC_RANGE:
             self._condition_hint.setText(
-                "Enter two comma-separated values, e.g. 1,3."
+                "Enter inclusive minimum and maximum values, e.g. 1,3."
+            )
+            self._condition_hint.setVisible(True)
+        elif is_multiple:
+            self._condition_hint.setText(
+                "Enter comma-separated values, e.g. online,degraded."
+            )
+            self._condition_hint.setVisible(True)
+        elif condition_kind is ConditionKind.FRESH_WITHIN:
+            self._condition_hint.setText(
+                "Enter the maximum observation age in seconds."
             )
             self._condition_hint.setVisible(True)
         else:
@@ -397,7 +461,15 @@ class ExpectationEditor(QWidget):
 
     def _form_expected_values(self) -> tuple[str, ...]:
         condition_kind = self._selected_condition_kind()
-        if condition_kind is ConditionKind.EQUAL:
+        if condition_kind in {
+            ConditionKind.TOPIC_EXISTS,
+            ConditionKind.TOPIC_ABSENT,
+        }:
+            return ()
+        if condition_kind in {
+            ConditionKind.EQUAL,
+            ConditionKind.FRESH_WITHIN,
+        }:
             return (self._expected.currentText(),)
         return tuple(
             value.strip()
@@ -426,6 +498,14 @@ class ExpectationEditor(QWidget):
             return ConditionKind.IN_RANGE
         if isinstance(condition, OutSideCondition):
             return ConditionKind.OUTSIDE
+        if isinstance(condition, NumericRangeCondition):
+            return ConditionKind.NUMERIC_RANGE
+        if isinstance(condition, TopicExistsCondition):
+            return ConditionKind.TOPIC_EXISTS
+        if isinstance(condition, TopicAbsentCondition):
+            return ConditionKind.TOPIC_ABSENT
+        if isinstance(condition, FreshnessCondition):
+            return ConditionKind.FRESH_WITHIN
         raise ValueError(
             f"Unsupported expectation condition: {type(condition).__name__}"
         )
@@ -436,13 +516,29 @@ class ExpectationEditor(QWidget):
             return (condition.expected_value,)
         if isinstance(condition, (InRangeCondition, OutSideCondition)):
             return condition.expected_values
+        if isinstance(condition, NumericRangeCondition):
+            return (str(condition.minimum), str(condition.maximum))
+        if isinstance(condition, FreshnessCondition):
+            return (f"{condition.max_age_seconds:g}",)
+        if isinstance(condition, (TopicExistsCondition, TopicAbsentCondition)):
+            return ()
         raise ValueError(
             f"Unsupported expectation condition: {type(condition).__name__}"
         )
 
     def _set_expected_values(self, values: tuple[bytes | str, ...]) -> None:
         condition_kind = self._selected_condition_kind()
-        if condition_kind is ConditionKind.EQUAL:
+        if condition_kind in {
+            ConditionKind.TOPIC_EXISTS,
+            ConditionKind.TOPIC_ABSENT,
+        }:
+            self._expected_values.clear()
+            self._expected.setEditText("")
+            return
+        if condition_kind in {
+            ConditionKind.EQUAL,
+            ConditionKind.FRESH_WITHIN,
+        }:
             value = values[0] if values else ""
             self._set_single_expected_value(value)
             return

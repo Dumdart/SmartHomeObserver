@@ -288,11 +288,27 @@ class MainViewModel(QObject):
             if not self._topic or mqtt_filter_has_wildcards(self._topic):
                 raise ValueError("Select an exact MQTT topic first.")
             target = TopicTarget(broker_id, self._topic)
-            condition_values = self._decode_expected_values(
-                expected_values,
-                encoding,
+            condition_values = (
+                self._decode_expected_values(expected_values, encoding)
+                if condition_kind
+                in {
+                    ConditionKind.EQUAL,
+                    ConditionKind.IN_RANGE,
+                    ConditionKind.OUTSIDE,
+                }
+                else expected_values
             )
         elif target_kind == "broker":
+            if condition_kind in {
+                ConditionKind.NUMERIC_RANGE,
+                ConditionKind.TOPIC_EXISTS,
+                ConditionKind.TOPIC_ABSENT,
+                ConditionKind.FRESH_WITHIN,
+            }:
+                raise ValueError(
+                    "Numeric range, existence, and freshness conditions require "
+                    "a topic target."
+                )
             target = BrokerTarget(broker_id)
             condition_values = expected_values
         else:

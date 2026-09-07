@@ -1,4 +1,6 @@
 import asyncio
+from dataclasses import replace
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -12,10 +14,14 @@ from topicgate.core.models.connection_status import ConnectionStatus
 from topicgate.core.models.current_topic import CurrentTopic
 from topicgate.core.models.health import BrokerTarget
 from topicgate.core.models.health import EqualCondition
+from topicgate.core.models.health import FreshnessCondition
 from topicgate.core.models.health import HealthExpectation
 from topicgate.core.models.health import HealthSeverity
 from topicgate.core.models.health import HealthStatus
 from topicgate.core.models.health import ObservationFindingCode
+from topicgate.core.models.health import NumericRangeCondition
+from topicgate.core.models.health import TopicAbsentCondition
+from topicgate.core.models.health import TopicExistsCondition
 from topicgate.core.models.health import TopicTarget
 from topicgate.core.models.observation_status import ObservationStatus
 from topicgate.core.models.subscription import Subscription
@@ -133,6 +139,146 @@ def test_broker_evaluation_does_not_treat_a_stale_value_as_condition_evidence(
     assert report.topic_findings[0].failure_code == "TOPIC_STALE"
     assert report.topic_findings[0].status is HealthStatus.UNKNOWN
     assert report.topic_findings[0].evidence_complete is False
+    database.dispose()
+
+
+def test_missing_topic_is_evaluated_by_topic_state_conditions(tmp_path) -> None:
+    cases = (
+        (TopicExistsCondition(), HealthStatus.PROBLEM, "TOPIC_EXPECTED_PRESENT"),
+        (TopicAbsentCondition(), HealthStatus.HEALTHY, None),
+        (FreshnessCondition(60), HealthStatus.PROBLEM, "FRESHNESS_CONDITION_FAILED"),
+    )
+
+    for index, (condition, status, failure_code) in enumerate(cases):
+        database = DatabaseContext(f"sqlite:///{tmp_path / f'missing-{index}.db'}")
+        broker_id = uuid4()
+        item = replace(_expectation(broker_id), condition=condition)
+        evaluator = _service(database, item, _metadata())
+
+        finding = evaluator.evaluate_broker(
+            broker_id,
+            evaluated_at=NOW,
+        ).topic_findings[0]
+
+        assert finding.status is status
+        assert finding.failure_code == failure_code
+        database.dispose()
+
+
+def test_cached_topic_counts_for_existence_and_uses_recorded_freshness(
+    tmp_path,
+) -> None:
+    database = DatabaseContext(f"sqlite:///{tmp_path / 'cached-freshness.db'}")
+    broker_id = uuid4()
+    item = replace(_expectation(broker_id), condition=FreshnessCondition(60))
+    message = TopicMessage(
+        broker_id=broker_id,
+        topic="devices/status",
+        payload=b"",
+        qos=0,
+        retain=False,
+        received_at=NOW - timedelta(seconds=30),
+        payload_size=0,
+        message_count=1,
+        observation_id=uuid4(),
+    )
+    evaluator = _service(
+        database,
+        item,
+        _metadata(),
+        (CurrentTopic(message, ObservationStatus.CACHED),),
+    )
+
+    finding = evaluator.evaluate_broker(
+        broker_id,
+        stale_after_seconds=10,
+        evaluated_at=NOW,
+    ).topic_findings[0]
+
+    assert finding.status is HealthStatus.HEALTHY
+    assert "30.0 seconds ago" in finding.evidence_summary
+    database.dispose()
+
+
+def test_topic_state_conditions_ignore_truncated_payloads(tmp_path) -> None:
+    database = DatabaseContext(f"sqlite:///{tmp_path / 'truncated-exists.db'}")
+    broker_id = uuid4()
+    item = replace(_expectation(broker_id), condition=TopicExistsCondition())
+    evaluator = _service(database, item, _metadata())
+    message = TopicMessage(
+        broker_id=broker_id,
+        topic="devices/status",
+        payload=b"partial",
+        qos=0,
+        retain=False,
+        received_at=NOW,
+        payload_size=100,
+        message_count=1,
+        observation_id=uuid4(),
+        is_truncated=True,
+    )
+
+    finding = evaluator.evaluate_observation(message)[0]
+
+    assert finding.status is HealthStatus.HEALTHY
+    assert finding.evidence_complete is True
+    database.dispose()
+
+
+def test_numeric_range_keeps_generic_stale_value_guard(tmp_path) -> None:
+    database = DatabaseContext(f"sqlite:///{tmp_path / 'stale-number.db'}")
+    broker_id = uuid4()
+    item = replace(
+        _expectation(broker_id),
+        condition=NumericRangeCondition(Decimal("1"), Decimal("3")),
+    )
+    message = TopicMessage(
+        broker_id=broker_id,
+        topic="devices/status",
+        payload=b"2",
+        qos=0,
+        retain=False,
+        received_at=NOW - timedelta(seconds=61),
+        payload_size=1,
+        message_count=1,
+        observation_id=uuid4(),
+    )
+    evaluator = _service(
+        database,
+        item,
+        _metadata(),
+        (CurrentTopic(message, ObservationStatus.LIVE),),
+    )
+
+    finding = evaluator.evaluate_broker(
+        broker_id,
+        stale_after_seconds=60,
+        evaluated_at=NOW,
+    ).topic_findings[0]
+
+    assert finding.status is HealthStatus.UNKNOWN
+    assert finding.failure_code == "TOPIC_STALE"
+    database.dispose()
+
+
+def test_unsubscribed_topic_state_condition_remains_unknown(tmp_path) -> None:
+    database = DatabaseContext(f"sqlite:///{tmp_path / 'unsubscribed-exists.db'}")
+    broker_id = uuid4()
+    item = replace(_expectation(broker_id), condition=TopicExistsCondition())
+    evaluator = _service(
+        database,
+        item,
+        _metadata(),
+        subscriptions=(),
+    )
+
+    finding = evaluator.evaluate_broker(
+        broker_id,
+        evaluated_at=NOW,
+    ).topic_findings[0]
+
+    assert finding.status is HealthStatus.UNKNOWN
+    assert finding.failure_code == "SUBSCRIPTION_UNAVAILABLE"
     database.dispose()
 
 

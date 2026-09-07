@@ -2,6 +2,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -47,6 +48,8 @@ from topicgate.core.models.topic_message import TopicMessage
 from topicgate.core.models.broker_profile import BrokerProfile
 from topicgate.core.models.broker_summary import BrokerSummary
 from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.condition_kind import ConditionKind
 from topicgate.core.models.health import (
     BrokerTarget,
@@ -83,6 +86,7 @@ from topicgate.gui.components.stored_observations_dialog import (
     StoredObservationsDialog,
 )
 from topicgate.gui.components.health_inspector import HealthInspector
+from topicgate.gui.components.expectation_editor import ExpectationEditor
 from topicgate.gui.components.topic_details import TopicDetailsPane
 from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.gui.gui import MainWindow
@@ -683,6 +687,83 @@ def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> Non
     assert stack.currentWidget() is window._topic_details
     assert editor.text() == "Unfinished rule"
     window.close()
+    application.processEvents()
+
+
+def test_topic_expectation_editor_configures_numeric_and_existence_conditions(
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    management = MagicMock()
+    management.list_expectations.return_value = ()
+    management.create_expectation.side_effect = lambda item, **_kwargs: item
+    view_model = MainViewModel(
+        runtime_for(repository),
+        repository.state.topic,
+        expectation_management_service=management,
+    )
+    window = MainWindow(view_model)
+    editor = window.findChild(QWidget, "topicExpectationEditor")
+    condition_kind = editor.findChild(QComboBox, "expectationConditionKind")
+    expected_editor = editor.findChild(
+        QStackedWidget,
+        "expectationExpectedEditor",
+    )
+    expected_values = editor.findChild(
+        QPlainTextEdit,
+        "expectationExpectedValues",
+    )
+    encoding = editor.findChild(QComboBox, "expectationEncoding")
+
+    editor.findChild(QLineEdit, "expectationName").setText("Temperature")
+    condition_kind.setCurrentIndex(
+        condition_kind.findData(ConditionKind.NUMERIC_RANGE)
+    )
+    expected_values.setPlainText("1.5,3")
+
+    assert expected_editor.currentWidget() is expected_values
+    assert encoding.isHidden()
+    editor.findChild(QPushButton, "saveExpectationButton").click()
+    created = management.create_expectation.call_args.args[0]
+    assert created.condition == NumericRangeCondition(
+        Decimal("1.5"),
+        Decimal("3"),
+    )
+
+    editor.findChild(QLineEdit, "expectationName").setText("Required topic")
+    condition_kind.setCurrentIndex(
+        condition_kind.findData(ConditionKind.TOPIC_EXISTS)
+    )
+
+    assert expected_editor.isHidden()
+    editor.findChild(QPushButton, "saveExpectationButton").click()
+    created = management.create_expectation.call_args.args[0]
+    assert created.condition == TopicExistsCondition()
+    window.close()
+    application.processEvents()
+
+
+def test_broker_expectation_editor_excludes_topic_only_conditions() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    management = MagicMock()
+    management.list_expectations.return_value = ()
+    editor = ExpectationEditor(
+        MainViewModel(
+            runtime_for(repository),
+            expectation_management_service=management,
+        ),
+        "broker",
+    )
+    selector = editor.findChild(QComboBox, "expectationConditionKind")
+    kinds = {ConditionKind(selector.itemData(index)) for index in range(selector.count())}
+
+    assert kinds == {
+        ConditionKind.EQUAL,
+        ConditionKind.IN_RANGE,
+        ConditionKind.OUTSIDE,
+    }
+    editor.close()
     application.processEvents()
 
 

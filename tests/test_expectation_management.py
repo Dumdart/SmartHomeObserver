@@ -11,12 +11,14 @@ from topicgate.app.services.health_expectation_service import HealthExpectationS
 from topicgate.app.services.health_report_service import HealthReportService
 from topicgate.core.models.health import (
     ActionKind,
+    BrokerTarget,
     EqualCondition,
     ExpectationState,
     HealthExpectation,
     HealthSeverity,
     HealthStatus,
     TopicTarget,
+    TopicExistsCondition,
 )
 from topicgate.core.models.subscription import Subscription
 from topicgate.core.models.topic_message import TopicMessage
@@ -87,6 +89,22 @@ def _components(tmp_path, subscriptions):
         reader,
     )
     return database, expectations, states, failures, management, pipeline
+
+
+def test_topic_only_condition_rejects_broker_target(tmp_path) -> None:
+    components = _components(tmp_path, (Subscription("devices/#"),))
+    database, _, _, _, management, _ = components
+    broker_id = uuid4()
+    item = replace(
+        _expectation(broker_id),
+        target=BrokerTarget(broker_id),
+        condition=TopicExistsCondition(),
+    )
+    try:
+        with pytest.raises(ValueError, match="require a topic target"):
+            management.create_expectation(item, broker_id=broker_id)
+    finally:
+        database.dispose()
 
 
 def test_metadata_and_enablement_changes_preserve_active_incident(tmp_path) -> None:

@@ -20,9 +20,19 @@ from topicgate.core.models.health import (
 )
 from topicgate.core.models.subscription import Subscription
 from topicgate.core.mqtt_topics import mqtt_filter_matches
+from topicgate.core.models.health.condition import FreshnessCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
+from topicgate.core.models.health.condition import TopicAbsentCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 
 
 SubscriptionsReader = Callable[[UUID], tuple[Subscription, ...]]
+TOPIC_ONLY_CONDITIONS = (
+    NumericRangeCondition,
+    TopicExistsCondition,
+    TopicAbsentCondition,
+    FreshnessCondition,
+)
 
 
 class ExpectationManagementService:
@@ -63,6 +73,7 @@ class ExpectationManagementService:
         self._check_broker_scope(expectation, broker_id)
         if expectation.revision < 1:
             raise ValueError("Expectation revision must be positive.")
+        self.validate_condition_target(expectation)
         self.validate_topic_observability(expectation)
         return self._expectation_repo.create(expectation)
 
@@ -109,6 +120,7 @@ class ExpectationManagementService:
             ),
             revision=current.revision + 1 if behavior_changed else current.revision,
         )
+        self.validate_condition_target(updated)
 
         if behavior_changed:
             self._supersede_active_revision(current, updated.revision)
@@ -159,6 +171,17 @@ class ExpectationManagementService:
             raise ValueError(
                 f"Topic {expectation.target.topic!r} is not covered by a "
                 "subscription for this broker profile."
+            )
+
+    @staticmethod
+    def validate_condition_target(expectation: HealthExpectation) -> None:
+        if isinstance(expectation.condition, TOPIC_ONLY_CONDITIONS) and not isinstance(
+            expectation.target,
+            TopicTarget,
+        ):
+            raise ValueError(
+                "Numeric range, existence, and freshness conditions require a "
+                "topic target."
             )
 
     def _supersede_active_revision(

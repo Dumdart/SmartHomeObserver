@@ -1,11 +1,16 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
 from topicgate.core.models.health.condition import EqualCondition
+from topicgate.core.models.health.condition import FreshnessCondition
 from topicgate.core.models.health.condition import InRangeCondition
+from topicgate.core.models.health.condition import NumericRangeCondition
 from topicgate.core.models.health.condition import OutSideCondition
+from topicgate.core.models.health.condition import TopicAbsentCondition
+from topicgate.core.models.health.condition import TopicExistsCondition
 from topicgate.core.models.health.expectation_failure import ExpectationFailure
 from topicgate.core.models.health.expectation_state import ExpectationState
 from topicgate.core.models.health.expectation_target import TopicTarget
@@ -73,10 +78,32 @@ def test_health_expectation_mapper_round_trips_topic_and_condition() -> None:
                 "expected_values": ["offline", "unknown"],
             },
         ),
+        (
+            NumericRangeCondition(Decimal("1.5"), Decimal("3")),
+            {
+                "kind": "numeric_range",
+                "minimum": "1.5",
+                "maximum": "3",
+            },
+        ),
+        (TopicExistsCondition(), {"kind": "topic_exists"}),
+        (TopicAbsentCondition(), {"kind": "topic_absent"}),
+        (
+            FreshnessCondition(60),
+            {"kind": "fresh_within", "max_age_seconds": 60},
+        ),
     ],
 )
 def test_condition_mapper_round_trips_all_condition_kinds(
-    condition: EqualCondition | InRangeCondition | OutSideCondition,
+    condition: (
+        EqualCondition
+        | InRangeCondition
+        | OutSideCondition
+        | NumericRangeCondition
+        | TopicExistsCondition
+        | TopicAbsentCondition
+        | FreshnessCondition
+    ),
     serialized: dict,
 ) -> None:
     assert HealthExpectationMapper._condition_to_dict(condition) == serialized
@@ -93,6 +120,12 @@ def test_condition_mapper_round_trips_all_condition_kinds(
             "value_type": "bytes",
         },
         {"kind": "unknown", "expected_value": "online"},
+        {"kind": "numeric_range", "minimum": "1"},
+        {"kind": "numeric_range", "minimum": "NaN", "maximum": "3"},
+        {"kind": "numeric_range", "minimum": "4", "maximum": "3"},
+        {"kind": "topic_exists", "expected_value": "unexpected"},
+        {"kind": "fresh_within", "max_age_seconds": "60"},
+        {"kind": "fresh_within", "max_age_seconds": -1},
     ],
 )
 def test_condition_mapper_rejects_invalid_condition_json(
