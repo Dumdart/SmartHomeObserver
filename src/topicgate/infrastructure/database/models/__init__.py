@@ -1,4 +1,7 @@
 from topicgate.infrastructure.database.models.app_config_row import AppConfigRow
+from topicgate.infrastructure.database.models.observation_event_row import (
+    ObservationEventRow, ObservationHistoryClockRow,
+)
 from topicgate.infrastructure.database.models.broker_profile_row import (
     BrokerProfileRow,
 )
@@ -25,6 +28,8 @@ from topicgate.infrastructure.database.models.subscription_row import (
 )
 
 __all__ = [
+    "ObservationEventRow",
+    "ObservationHistoryClockRow",
     "AppConfigRow",
     "BrokerProfileRow",
     "ExpectationFailureRow",

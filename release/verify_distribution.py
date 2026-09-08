@@ -10,7 +10,7 @@ _RUNTIME_PROBE = """
 from pathlib import Path
 
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 import topicgate
 from topicgate.infrastructure.database.migrations import (
@@ -39,6 +39,8 @@ with engine.connect() as connection:
     ).scalar_one()
 
 assert installed_revision == expected_revision
+assert "observation_event" in inspect(engine).get_table_names()
+assert "observation_history_clock" in inspect(engine).get_table_names()
 print(f"Verified installed TopicGate wheel at {package_dir}")
 print(f"Verified fresh database migration {installed_revision}")
 """
