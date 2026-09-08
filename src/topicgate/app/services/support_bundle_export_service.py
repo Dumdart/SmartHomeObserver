@@ -35,5 +35,12 @@ class SupportBundleExporter:
     ) -> SupportBundleArtifacts:
         return self.export(options)
 
+    def preview_redaction_manifest(
+        self,
+        options: SupportBundleOptions | None = None,
+    ) -> str:
+        manifest = self._service.redaction_manifest_preview(options)
+        return self._representation.build_presentation_manifest(manifest)
+
 
 SupportBundleExportService = SupportBundleExporter

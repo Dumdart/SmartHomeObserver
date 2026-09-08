@@ -30,6 +30,7 @@ class SupportBundleRepresentation:
             json=self.build_presentation_json(support_bundle),
             markdown=self.build_presentation_markdown(support_bundle),
             manifest=self.build_presentation_manifest(manifest),
+            warnings=_bundle_warnings(support_bundle),
         )
 
     def build_presentation_json(self, support_bundle: SupportBundle) -> str:
@@ -122,6 +123,62 @@ def _bundle_dict(bundle: SupportBundle) -> dict[str, Any]:
         "broker_results": _result_limit_dict(bundle.broker_results),
         "limitations": list(bundle.limitations),
     }
+
+
+def _bundle_warnings(bundle: SupportBundle) -> tuple[str, ...]:
+    warnings = [f"Bundle limitation: {item}." for item in bundle.limitations]
+    if bundle.diagnostic_results.omitted:
+        warnings.append(
+            f"Diagnostics omitted by bounds: {bundle.diagnostic_results.omitted}."
+        )
+    if bundle.broker_results.omitted:
+        warnings.append(
+            f"Brokers omitted by bounds: {bundle.broker_results.omitted}."
+        )
+    for broker in bundle.brokers:
+        warnings.extend(
+            f"{broker.broker_alias} limitation: {item}."
+            for item in broker.limitations
+        )
+        if broker.subscription_results.omitted:
+            warnings.append(
+                f"{broker.broker_alias} subscriptions omitted by bounds: "
+                f"{broker.subscription_results.omitted}."
+            )
+        if broker.topic_results.omitted:
+            warnings.append(
+                f"{broker.broker_alias} topics omitted by bounds: "
+                f"{broker.topic_results.omitted}."
+            )
+        for topic in broker.topics:
+            if isinstance(topic, SupportTopicStateWithPayload):
+                if topic.payload.ingestion_truncated:
+                    warnings.append(
+                        f"Payload for {topic.topic_alias} was truncated during "
+                        "ingestion."
+                    )
+                if topic.payload.rendering_truncated:
+                    warnings.append(
+                        f"Payload for {topic.topic_alias} was truncated by export "
+                        "bounds."
+                    )
+        if broker.health is None:
+            continue
+        if broker.health.omitted_count:
+            warnings.append(
+                f"{broker.broker_alias} health findings omitted by bounds: "
+                f"{broker.health.omitted_count}."
+            )
+        if not broker.health.evidence_complete:
+            warnings.append(
+                f"{broker.broker_alias} health evidence is incomplete."
+            )
+        warnings.extend(
+            f"Evidence for {finding.finding_alias} was truncated by export bounds."
+            for finding in broker.health.findings
+            if finding.evidence_truncated
+        )
+    return tuple(dict.fromkeys(warnings))
 
 
 def _broker_dict(broker: SupportBroker) -> dict[str, Any]:

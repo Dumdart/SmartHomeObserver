@@ -37,6 +37,9 @@ from topicgate.infrastructure.health_actions.log_health_action import LogHealthA
 from topicgate.infrastructure.health_actions.persist_failure_action import (
     PersistFailureAction,
 )
+from topicgate.infrastructure.support_bundle_archive import (
+    SupportBundleArchiveWriter,
+)
 from topicgate.infrastructure.repository.expectation_failure_repository import (
     ExpectationFailureRepository,
 )
@@ -216,6 +219,7 @@ class AppDependencies:
         self.support_bundle_exporter = SupportBundleExporter(
             self.support_bundle_service
         )
+        self.support_bundle_archive_writer = SupportBundleArchiveWriter()
         self.health_monitor = BrokerHealthMonitor(
             self.health_sink,
             broker_ids_reader=lambda: (self.runtime.active_broker.id,),

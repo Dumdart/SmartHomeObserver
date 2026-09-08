@@ -4,6 +4,7 @@ from base64 import b64decode
 from contextlib import asynccontextmanager
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import AsyncIterator
 from uuid import UUID, uuid4
 
@@ -21,6 +22,10 @@ from topicgate.app.services.expectation_management_service import (
 from topicgate.app.services.health_query_service import HealthQueryService
 from topicgate.app.services.mcp_setup_service import McpSetupService
 from topicgate.app.models.mcp_setup import McpPreflightCheck, McpSetupInformation
+from topicgate.app.models.support_bundle_export import SupportBundleExportResult
+from topicgate.app.services.support_bundle_export_service import (
+    SupportBundleExporter,
+)
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.models.broker_summary import BrokerSummary
 from topicgate.core.models.health.condition_kind import ConditionKind
@@ -41,6 +46,10 @@ from topicgate.core.models.observation_retention_policy import (
     ObservationRetentionPolicy,
 )
 from topicgate.core.models.topic_message import TopicMessage
+from topicgate.core.models.support_bundle import SupportBundleOptions
+from topicgate.infrastructure.support_bundle_archive import (
+    SupportBundleArchiveWriter,
+)
 from topicgate.core.models.health import (
     ActionKind,
     BrokerTarget,
@@ -109,6 +118,8 @@ class MainViewModel(QObject):
         expectation_management_service: (
             ExpectationManagementService | None
         ) = None,
+        support_bundle_exporter: SupportBundleExporter | None = None,
+        support_bundle_archive_writer: SupportBundleArchiveWriter | None = None,
     ) -> None:
         super().__init__()
         self._runtime = runtime
@@ -116,6 +127,8 @@ class MainViewModel(QObject):
         self._mcp_setup_service = mcp_setup_service
         self._health_query_service = health_query_service
         self._expectation_management_service = expectation_management_service
+        self._support_bundle_exporter = support_bundle_exporter
+        self._support_bundle_archive_writer = support_bundle_archive_writer
         self._health_report_result: ExpectationHealthReport | None = None
         self._health_history_result = FailureHistoryResult((), None, 0)
         self._snapshot_query = SnapshotQuery()
@@ -608,6 +621,41 @@ class MainViewModel(QObject):
                 ),
             )
         return self._mcp_setup_service.preflight()
+
+    def support_bundle_manifest_preview(
+        self,
+        *,
+        include_payloads: bool = False,
+    ) -> str:
+        if self._support_bundle_exporter is None:
+            raise RuntimeError("Support-bundle export is unavailable.")
+        return self._support_bundle_exporter.preview_redaction_manifest(
+            SupportBundleOptions(include_payloads=include_payloads)
+        )
+
+    async def export_support_bundle(
+        self,
+        destination: Path,
+        *,
+        include_payloads: bool = False,
+    ) -> SupportBundleExportResult:
+        if (
+            self._support_bundle_exporter is None
+            or self._support_bundle_archive_writer is None
+        ):
+            raise RuntimeError("Support-bundle export is unavailable.")
+        async with self._operation("support-bundle"):
+            artifacts = await asyncio.to_thread(
+                self._support_bundle_exporter.export,
+                SupportBundleOptions(include_payloads=include_payloads),
+            )
+            written = await asyncio.to_thread(
+                self._support_bundle_archive_writer.write,
+                destination,
+                artifacts,
+            )
+        self.log_message.emit("Exported a redacted support bundle.")
+        return SupportBundleExportResult(written, artifacts.warnings)
 
     def test_broker_snapshot(self) -> BrokerSnapshotHealth:
         self.refresh_snapshot(clear_invalid_selection=False)
@@ -1300,7 +1348,12 @@ class MainViewModel(QObject):
 
     @asynccontextmanager
     async def _operation(self, name: str) -> AsyncIterator[None]:
-        exclusive_operations = {"connection", "broker", "stored-observations"}
+        exclusive_operations = {
+            "connection",
+            "broker",
+            "stored-observations",
+            "support-bundle",
+        }
         if name in self._busy_operations:
             raise RuntimeError(f"The {name} operation is already in progress.")
         if (
@@ -1308,7 +1361,8 @@ class MainViewModel(QObject):
             and self._busy_operations.intersection(exclusive_operations)
         ):
             raise RuntimeError(
-                "A reconnect, broker change, or stored-observation operation is "
+                "A reconnect, broker change, stored-observation, or support-bundle "
+                "operation is "
                 "already in progress. Wait for it to finish before starting "
                 "another exclusive action."
             )

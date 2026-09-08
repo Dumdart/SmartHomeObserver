@@ -12,6 +12,10 @@ If TopicGate tools are unavailable, stop. Tell the user to install TopicGate, co
 - Report identity, connection state, subscriptions, cache summary, freshness, completeness, limitations, results, dropped messages, and truncation.
 - Report each topic's value, age, and live/cached/stale provenance. Report binary payloads as base64 with byte count; never interpret them. Report truncated payloads with their limit; never infer omitted content.
 - Empty, partial, cached, stale, or disconnected results are valid; report them without activating a broker.
+- For shareable diagnostics, call `get_support_bundle` with `json` (structured) or
+  `markdown` (human-readable). Keep its redaction manifest with the result and
+  report every warning, omission, and truncation. It never writes a file or
+  includes MQTT payloads; do not seek a payload flag or filesystem path.
 
 For topic filters or maximum-age constraints, use legacy `get_broker_snapshot`; map `snapshot_limit` to its `limit` argument. Use `list_brokers` only after an unknown or ambiguous broker name, then ask the user to choose a UUID.
 

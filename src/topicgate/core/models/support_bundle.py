@@ -172,6 +172,7 @@ class SupportBundleArtifacts:
     json: str
     markdown: str
     manifest: str
+    warnings: tuple[str, ...] = ()
 
 
 def _validate_integer(

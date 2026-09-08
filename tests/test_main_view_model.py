@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -20,6 +21,7 @@ from topicgate.core.models.observation_cache_administration import (
     CacheUsageSummary,
     ObservationDeletionResult,
 )
+from topicgate.core.models.support_bundle import SupportBundleArtifacts
 from topicgate.core.models.observation_deletion_preview import (
     ObservationDeletionEntry,
     ObservationDeletionPreview,
@@ -181,6 +183,65 @@ async def test_broker_lifecycle_operations_do_not_overlap() -> None:
             assert "already in progress" in str(error)
         else:
             raise AssertionError("Expected overlapping lifecycle operation to fail")
+
+
+async def test_support_bundle_export_runs_collection_and_archive_work_in_threads(
+    tmp_path: Path,
+) -> None:
+    runtime = runtime_for(FakeObserverRepository())
+    artifacts = SupportBundleArtifacts(
+        "{}\n",
+        "# Bundle\n",
+        "{}\n",
+        ("Diagnostics omitted by bounds: 2.",),
+    )
+    exporter = MagicMock()
+    exporter.export.return_value = artifacts
+    writer = MagicMock()
+    destination = tmp_path / "support.zip"
+    writer.write.return_value = destination
+    view_model = MainViewModel(
+        runtime,
+        support_bundle_exporter=exporter,
+        support_bundle_archive_writer=writer,
+    )
+
+    async def run_in_place(function, *args):
+        return function(*args)
+
+    with patch(
+        "topicgate.gui.main_view_model.asyncio.to_thread",
+        new_callable=AsyncMock,
+        side_effect=run_in_place,
+    ) as to_thread:
+        result = await view_model.export_support_bundle(destination)
+
+    assert result.destination == destination
+    assert result.warnings == artifacts.warnings
+    assert to_thread.await_count == 2
+    options = exporter.export.call_args.args[0]
+    assert options.include_payloads is False
+    writer.write.assert_called_once_with(destination, artifacts)
+    assert not view_model.is_busy("support-bundle")
+
+
+async def test_support_bundle_exporter_errors_leave_no_archive_and_clear_busy(
+    tmp_path: Path,
+) -> None:
+    exporter = MagicMock()
+    exporter.export.side_effect = RuntimeError("collection failed")
+    writer = MagicMock()
+    view_model = MainViewModel(
+        runtime_for(FakeObserverRepository()),
+        support_bundle_exporter=exporter,
+        support_bundle_archive_writer=writer,
+    )
+
+    with pytest.raises(RuntimeError, match="collection failed"):
+        await view_model.export_support_bundle(tmp_path / "support.zip")
+
+    writer.write.assert_not_called()
+    assert not view_model.is_busy("support-bundle")
 
 
 async def test_stored_observation_query_builds_filter_and_runs_in_thread() -> None:

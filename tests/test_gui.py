@@ -66,6 +66,10 @@ from topicgate.core.models.health import (
 from topicgate.core.models.mqtt_observation import MqttObservation as TopicState
 from topicgate.core.models.observer_workspace import ObserverWorkspace
 from topicgate.core.models.subscription import Subscription
+from topicgate.gui.components.support_bundle_export_dialog import (
+    SupportBundleExportDialog,
+    suggested_support_bundle_filename,
+)
 from topicgate.core.models.observation_retention_policy import (
     ObservationRetentionPolicy,
 )
@@ -646,6 +650,149 @@ def test_desktop_onboarding_and_mcp_setup_guide_the_first_run() -> None:
     ).text()
     dialog.accept()
     assert settings.value("onboarding/mcpConfigured", False, type=bool)
+    window.close()
+    application.processEvents()
+
+
+def test_support_bundle_action_and_privacy_dialog_are_available() -> None:
+    application = QApplication.instance() or QApplication([])
+    view_model = MainViewModel(runtime_for(FakeGuiRepository()))
+    view_model.support_bundle_manifest_preview = MagicMock(
+        return_value=(
+            '{"bundle_id":"preview","policies":['
+            '{"category":"credentials","strategy":"structurally_excluded",'
+            '"occurrence_count":0}]}'
+        )
+    )
+    window = MainWindow(view_model)
+
+    action = window.findChild(QAction, "supportBundleExportAction")
+    assert action is not None
+    assert action.text() == "Export support bundle…"
+    action.trigger()
+    dialog = window.findChild(QDialog, "supportBundleExportDialog")
+    assert dialog is not None
+    payloads = dialog.findChild(QCheckBox, "includeSupportBundlePayloads")
+    assert payloads is not None
+    assert not payloads.isChecked()
+    assert "credential-store" in dialog.findChild(
+        QLabel, "supportBundleStructuralExclusions"
+    ).text()
+    assert "structurally_excluded" in dialog.findChild(
+        QPlainTextEdit, "supportBundleManifestPreview"
+    ).toPlainText()
+
+    payloads.setChecked(True)
+
+    view_model.support_bundle_manifest_preview.assert_called_with(
+        include_payloads=True
+    )
+    dialog.reject()
+    window.close()
+    application.processEvents()
+
+
+def test_support_bundle_filename_is_timestamped_and_contains_no_identifiers() -> None:
+    filename = suggested_support_bundle_filename(
+        datetime(2026, 9, 8, 12, 34, 56)
+    )
+
+    assert filename == "topicgate-support-20260908-123456.zip"
+    assert all(
+        sentinel not in filename
+        for sentinel in ("broker", "topic/", "username", "localhost", "uuid")
+    )
+
+
+def test_payload_export_requires_second_confirmation_and_can_be_cancelled() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())))
+
+    with patch(
+        "topicgate.gui.main_window.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ) as question, patch(
+        "topicgate.gui.main_window.QFileDialog.getSaveFileName"
+    ) as save_dialog:
+        window._choose_support_bundle_destination(True)
+
+    question.assert_called_once()
+    save_dialog.assert_not_called()
+    window.close()
+    application.processEvents()
+
+
+def test_support_bundle_save_dialog_cancellation_starts_no_export() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())))
+    window._run_async = MagicMock()
+
+    with patch(
+        "topicgate.gui.main_window.QFileDialog.getSaveFileName",
+        return_value=("", ""),
+    ):
+        window._choose_support_bundle_destination(False)
+
+    window._run_async.assert_not_called()
+    window.close()
+    application.processEvents()
+
+
+def test_confirmed_payload_export_proceeds_to_the_save_dialog(
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())))
+    started = []
+
+    def capture(operation) -> None:
+        started.append(operation)
+        operation.close()
+
+    window._run_async = capture
+    destination = tmp_path / "support.zip"
+    with patch(
+        "topicgate.gui.main_window.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ) as question, patch(
+        "topicgate.gui.main_window.QFileDialog.getSaveFileName",
+        return_value=(str(destination), "ZIP archives (*.zip)"),
+    ) as save_dialog:
+        window._choose_support_bundle_destination(True)
+
+    question.assert_called_once()
+    save_dialog.assert_called_once()
+    assert len(started) == 1
+    window.close()
+    application.processEvents()
+
+
+async def test_support_bundle_completion_shows_destination_and_warnings(
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    view_model = MainViewModel(runtime_for(FakeGuiRepository()))
+    destination = tmp_path / "support.zip"
+    view_model.export_support_bundle = AsyncMock(
+        return_value=SimpleNamespace(
+            destination=destination,
+            warnings=(
+                "Snapshot collection unavailable.",
+                "Topics omitted by bounds: 4.",
+                "Payload was truncated by export bounds.",
+            ),
+        )
+    )
+    window = MainWindow(view_model)
+
+    with patch("topicgate.gui.main_window.QMessageBox.information") as notice:
+        await window._export_support_bundle(destination, False)
+
+    message = notice.call_args.args[2]
+    assert str(destination) in message
+    assert "collection unavailable" in message
+    assert "omitted by bounds" in message
+    assert "truncated" in message
     window.close()
     application.processEvents()
 

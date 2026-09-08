@@ -1,12 +1,14 @@
 import asyncio
 from collections.abc import Coroutine
 from contextlib import suppress
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
+    QFileDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -38,6 +40,10 @@ from topicgate.gui.components.subscription_settings import (
 )
 from topicgate.gui.components.stored_observations_dialog import (
     StoredObservationsDialog,
+)
+from topicgate.gui.components.support_bundle_export_dialog import (
+    SupportBundleExportDialog,
+    suggested_support_bundle_filename,
 )
 from topicgate.gui.components.topic_details import TopicDetailsPane
 from topicgate.gui.components.workspace_pane import (
@@ -76,6 +82,9 @@ class MainWindow(QMainWindow):
         self._settings = settings or QSettings()
         self._stored_observations_dialog: StoredObservationsDialog | None = None
         self._mcp_setup_dialog: McpSetupDialog | None = None
+        self._support_bundle_export_dialog: (
+            SupportBundleExportDialog | None
+        ) = None
         if settings is None:
             migrate_legacy_settings(self._settings)
         self.setWindowTitle(view_model.title)
@@ -381,6 +390,19 @@ class MainWindow(QMainWindow):
         self._mcp_setup_action.setToolTip("Show TopicGate MCP client configuration")
         self._mcp_setup_action.setShortcut("Ctrl+Shift+M")
         self._mcp_setup_action.triggered.connect(self._show_mcp_setup)
+        self._support_bundle_export_action = QAction(
+            "Export support bundle…",
+            self,
+        )
+        self._support_bundle_export_action.setObjectName(
+            "supportBundleExportAction"
+        )
+        self._support_bundle_export_action.setToolTip(
+            "Export bounded, redacted diagnostics for support"
+        )
+        self._support_bundle_export_action.triggered.connect(
+            self._show_support_bundle_export
+        )
         self._focus_topic_search_action = QAction("Focus topic search", self)
         self._focus_topic_search_action.setShortcut("Ctrl+F")
         self._focus_topic_search_action.triggered.connect(
@@ -403,6 +425,7 @@ class MainWindow(QMainWindow):
 
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction(self._mcp_setup_action)
+        help_menu.addAction(self._support_bundle_export_action)
         help_menu.addSeparator()
         help_menu.addAction(self._about_action)
 
@@ -432,6 +455,66 @@ class MainWindow(QMainWindow):
             lambda: setattr(self, "_mcp_setup_dialog", None)
         )
         dialog.open()
+
+    def _show_support_bundle_export(self) -> None:
+        dialog = SupportBundleExportDialog(self._view_model, self)
+        self._support_bundle_export_dialog = dialog
+        dialog.accepted.connect(
+            lambda: self._choose_support_bundle_destination(
+                dialog.include_payloads
+            )
+        )
+        dialog.destroyed.connect(
+            lambda: setattr(self, "_support_bundle_export_dialog", None)
+        )
+        dialog.open()
+
+    def _choose_support_bundle_destination(self, include_payloads: bool) -> None:
+        if include_payloads:
+            confirmed = QMessageBox.question(
+                self,
+                "Include MQTT payloads?",
+                "MQTT payloads can contain personal data, access tokens, device "
+                "identifiers, and other secrets. TopicGate only bounds their size; "
+                "it cannot determine whether their contents are safe to share.\n\n"
+                "Include payloads in this support bundle?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirmed != QMessageBox.StandardButton.Yes:
+                return
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export support bundle",
+            str(Path.home() / suggested_support_bundle_filename()),
+            "ZIP archives (*.zip)",
+        )
+        if not destination:
+            return
+        self._run_async(
+            self._export_support_bundle(Path(destination), include_payloads)
+        )
+
+    async def _export_support_bundle(
+        self,
+        destination: Path,
+        include_payloads: bool,
+    ) -> None:
+        result = await self._view_model.export_support_bundle(
+            destination,
+            include_payloads=include_payloads,
+        )
+        details = (
+            "No collection, omission, or truncation warnings were reported."
+            if not result.warnings
+            else "Warnings and limitations:\n- " + "\n- ".join(result.warnings)
+        )
+        QMessageBox.information(
+            self,
+            "Support bundle exported",
+            f"Saved to:\n{result.destination}\n\n{details}\n\n"
+            "Review the archive before sharing it.",
+        )
 
     def _mark_mcp_configured(self, _result: int) -> None:
         self._settings.setValue("onboarding/mcpConfigured", True)
@@ -593,6 +676,9 @@ class MainWindow(QMainWindow):
         self._observer_tree.set_connection_busy(exclusive_busy)
         self._stored_observations_action.setEnabled(
             not exclusive_busy
+        )
+        self._support_bundle_export_action.setEnabled(
+            not self._view_model.any_operation_busy
         )
         self._render_connection_controls(exclusive_busy)
         self._render_onboarding()

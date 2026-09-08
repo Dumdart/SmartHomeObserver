@@ -134,6 +134,7 @@ async def test_cached_plugin_bundle_exposes_read_only_tools(
     assert {tool.name for tool in tools} == {
         "get_broker_snapshot",
         "get_connection_status",
+        "get_support_bundle",
         "get_topic_state",
         "inspect_broker",
         "list_brokers",

@@ -1,8 +1,10 @@
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from unittest.mock import patch
 from uuid import UUID
 
 import pytest
@@ -41,6 +43,11 @@ from topicgate.core.models.support_bundle import (
     SupportTopicState,
     SupportTopicStateWithPayload,
 )
+from topicgate.infrastructure.support_bundle_archive import (
+    SupportBundleArchiveWriter,
+)
+from topicgate.mcp.api.support_bundle_api import SupportBundleAPI
+from zipfile import ZipFile
 
 
 NOW = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
@@ -252,6 +259,153 @@ def test_wired_export_never_queries_the_credential_store(
     credentials.get_password.assert_not_called()
     credentials.set_password.assert_not_called()
     credentials.delete_password.assert_not_called()
+
+
+def test_archive_writer_packages_exporter_artifacts(tmp_path: Path) -> None:
+    artifacts = _exporter()[0].export()
+    destination = tmp_path / "topicgate-support-20260908-120000.zip"
+
+    written = SupportBundleArchiveWriter().write(destination, artifacts)
+
+    assert written == destination.resolve()
+    with ZipFile(destination) as archive:
+        assert set(archive.namelist()) == {
+            "support-bundle.json",
+            "README.md",
+            "redaction-manifest.json",
+        }
+        assert archive.read("support-bundle.json").decode() == artifacts.json
+        assert archive.read("README.md").decode() == artifacts.markdown
+        assert archive.read("redaction-manifest.json").decode() == artifacts.manifest
+
+
+def test_archive_writer_preserves_destination_when_atomic_replace_fails(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "support.zip"
+    destination.write_bytes(b"existing archive")
+    artifacts = _exporter()[0].export()
+
+    with patch(
+        "topicgate.infrastructure.support_bundle_archive.os.replace",
+        side_effect=OSError("replace failed"),
+    ), pytest.raises(OSError, match="replace failed"):
+        SupportBundleArchiveWriter().write(destination, artifacts)
+
+    assert destination.read_bytes() == b"existing archive"
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_manifest_preview_uses_the_same_central_redaction_policies() -> None:
+    exporter, _ = _exporter()
+
+    default = json.loads(exporter.preview_redaction_manifest())
+    opted_in = json.loads(
+        exporter.preview_redaction_manifest(
+            SupportBundleOptions(include_payloads=True)
+        )
+    )
+
+    default_policies = {
+        item["category"]: item["strategy"] for item in default["policies"]
+    }
+    opted_in_policies = {
+        item["category"]: item["strategy"] for item in opted_in["policies"]
+    }
+    assert default_policies["payloads_and_evidence"] == "structurally_excluded"
+    assert opted_in_policies["payloads_and_evidence"] == "bounded_included"
+    assert default_policies["credentials"] == opted_in_policies["credentials"]
+
+
+def test_desktop_archive_and_mcp_preserve_shared_security_invariants(
+    tmp_path: Path,
+) -> None:
+    service, snapshots = _service()
+    snapshots.build_resolved_current.return_value = replace(
+        _snapshot(),
+        results=SnapshotResultLimit(1, 7, 1, 6, 0, 0, True),
+        completeness=SnapshotCompleteness(
+            False,
+            (
+                SnapshotLimitation.CURRENT_STATE_ONLY,
+                SnapshotLimitation.RESULT_LIMIT_REACHED,
+            ),
+        ),
+    )
+    service._health.get_health_report.return_value = replace(
+        _health_report(),
+        returned_count=1,
+        omitted_count=5,
+    )
+    exporter = SupportBundleExporter(service)
+    desktop = exporter.export(
+        SupportBundleOptions(topic_limit=1, health_limit=1)
+    )
+    mcp = SupportBundleAPI(exporter).get_support_bundle()
+    destination = SupportBundleArchiveWriter().write(
+        tmp_path / "topicgate-support-20260908-120000.zip",
+        desktop,
+    )
+
+    with ZipFile(destination) as archive:
+        archived = {
+            name: archive.read(name).decode()
+            for name in archive.namelist()
+        }
+    combined = "\n".join(
+        (
+            desktop.json,
+            desktop.markdown,
+            desktop.manifest,
+            json.dumps(mcp),
+            *archived.values(),
+        )
+    )
+    for structurally_excluded in (
+        str(BROKER_ID),
+        REAL_TOPIC,
+        SECRET_PAYLOAD,
+        SECRET_USERNAME,
+        SECRET_PASSWORD,
+        SECRET_HOST,
+        SECRET_PATH,
+        KEYRING_IDENTIFIER,
+    ):
+        assert structurally_excluded not in combined
+
+    desktop_json = json.loads(desktop.json)
+    mcp_json = mcp["content"]
+    assert isinstance(mcp_json, dict)
+    desktop_topic = desktop_json["brokers"][0]["topics"][0]
+    mcp_topic = mcp_json["brokers"][0]["topics"][0]
+    assert "payload" not in desktop_topic
+    assert "payload" not in mcp_topic
+    assert desktop_topic["topic_alias"] == (
+        desktop_json["brokers"][0]["subscriptions"][0]["topic_alias"]
+    )
+    assert mcp_topic["topic_alias"] == (
+        mcp_json["brokers"][0]["subscriptions"][0]["topic_alias"]
+    )
+    assert desktop_json["brokers"][0]["topic_results"]["omitted"] == 6
+    assert mcp_json["brokers"][0]["topic_results"]["omitted"] == 6
+    assert desktop_json["brokers"][0]["health"]["omitted_count"] == 5
+    assert mcp_json["brokers"][0]["health"]["omitted_count"] == 5
+    assert any("current_state_only" in warning for warning in desktop.warnings)
+    assert any("topics omitted by bounds: 6" in warning for warning in desktop.warnings)
+    assert any(
+        "health findings omitted by bounds: 5" in warning
+        for warning in desktop.warnings
+    )
+    assert mcp["warnings"]
+    assert json.loads(desktop.manifest)["policies"][5]["strategy"] == (
+        "structurally_excluded"
+    )
+    assert mcp["redaction_manifest"]["policies"][5]["strategy"] == (
+        "structurally_excluded"
+    )
+    assert archived["support-bundle.json"] == desktop.json
+    assert archived["README.md"] == desktop.markdown
+    assert archived["redaction-manifest.json"] == desktop.manifest
 
 
 def _exporter(identifier_factory=lambda: BUNDLE_IDS[0]):

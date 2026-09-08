@@ -185,44 +185,80 @@ class SupportBundleService:
         return RedactionManifest(
             schema_version=bundle.schema_version,
             bundle_id=bundle.bundle_id,
-            policies=(
-                RedactionPolicy(
-                    "credentials",
-                    "structurally_excluded",
-                    len(bundle.brokers),
-                ),
-                RedactionPolicy(
-                    "credential_store_identifiers",
-                    "structurally_excluded",
-                    len(bundle.brokers),
-                ),
-                RedactionPolicy(
-                    "broker_identifiers_and_names",
-                    "per_bundle_alias",
-                    len(bundle.brokers),
-                ),
-                RedactionPolicy(
-                    "connection_hosts_and_usernames",
-                    "structurally_excluded",
-                    len(bundle.brokers),
-                ),
-                RedactionPolicy(
-                    "topics",
-                    "per_bundle_alias",
-                    len(topic_aliases),
-                ),
-                RedactionPolicy(
-                    "payloads_and_evidence",
+            policies=self._redaction_policies(
+                payloads_included=bundle.payloads_included,
+                broker_count=len(bundle.brokers),
+                topic_count=len(topic_aliases),
+                payload_and_evidence_count=topic_count + finding_count,
+                diagnostic_count=len(bundle.diagnostics),
+            ),
+        )
+
+    def redaction_manifest_preview(
+        self,
+        options: SupportBundleOptions | None = None,
+    ) -> RedactionManifest:
+        selected = options or SupportBundleOptions()
+        return RedactionManifest(
+            schema_version=SUPPORT_BUNDLE_SCHEMA_VERSION,
+            bundle_id="preview",
+            policies=self._redaction_policies(
+                payloads_included=selected.include_payloads,
+                broker_count=0,
+                topic_count=0,
+                payload_and_evidence_count=0,
+                diagnostic_count=0,
+            ),
+        )
+
+    @staticmethod
+    def _redaction_policies(
+        *,
+        payloads_included: bool,
+        broker_count: int,
+        topic_count: int,
+        payload_and_evidence_count: int,
+        diagnostic_count: int,
+    ) -> tuple[RedactionPolicy, ...]:
+        return (
+            RedactionPolicy(
+                "credentials",
+                "structurally_excluded",
+                broker_count,
+            ),
+            RedactionPolicy(
+                "credential_store_identifiers",
+                "structurally_excluded",
+                broker_count,
+            ),
+            RedactionPolicy(
+                "broker_identifiers_and_names",
+                "per_bundle_alias",
+                broker_count,
+            ),
+            RedactionPolicy(
+                "connection_hosts_and_usernames",
+                "structurally_excluded",
+                broker_count,
+            ),
+            RedactionPolicy(
+                "topics",
+                "per_bundle_alias",
+                topic_count,
+            ),
+            RedactionPolicy(
+                "payloads_and_evidence",
+                (
                     "bounded_included"
-                    if bundle.payloads_included
-                    else "structurally_excluded",
-                    topic_count + finding_count,
+                    if payloads_included
+                    else "structurally_excluded"
                 ),
-                RedactionPolicy(
-                    "filesystem_paths",
-                    "structurally_excluded",
-                    len(bundle.diagnostics),
-                ),
+                payload_and_evidence_count,
+            ),
+            RedactionPolicy(
+                "filesystem_paths",
+                "structurally_excluded",
+                diagnostic_count,
             ),
         )
 
