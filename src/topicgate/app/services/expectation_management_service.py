@@ -26,6 +26,7 @@ from topicgate.core.models.health.condition import FreshnessCondition
 from topicgate.core.models.health.condition import NumericRangeCondition
 from topicgate.core.models.health.condition import TopicAbsentCondition
 from topicgate.core.models.health.condition import TopicExistsCondition
+from topicgate.core.models.diagnostic_profile import default_profile_id
 
 
 SubscriptionsReader = Callable[[UUID], tuple[Subscription, ...]]
@@ -85,6 +86,25 @@ class ExpectationManagementService:
         broker_id: UUID | None = None,
     ) -> HealthExpectation:
         self._check_broker_scope(expectation, broker_id)
+        target_broker_id = getattr(expectation.target, "broker_id", None)
+        candidate_profile_id = (
+            default_profile_id(target_broker_id)
+            if target_broker_id is not None
+            else None
+        )
+        profile_exists = getattr(self._expectation_repo, "has_profile", lambda _id: False)
+        if (
+            expectation.profile_id is None
+            and candidate_profile_id is not None
+            and profile_exists(candidate_profile_id)
+        ):
+            expectation = replace(
+                expectation,
+                profile_id=candidate_profile_id,
+                rule_id=expectation.rule_id or f"rule-{expectation.expectation_id}",
+                rule_schema_version=1,
+                source_kind="custom",
+            )
         if expectation.revision < 1:
             raise ValueError("Expectation revision must be positive.")
         self.validate_condition_target(expectation)
@@ -174,6 +194,10 @@ class ExpectationManagementService:
             if expectation is None:
                 raise KeyError(f"Unknown health expectation: {expectation_id}")
             self._check_broker_scope(expectation, broker_id)
+            if expectation.source_kind == "pack":
+                raise ValueError(
+                    "Pack-backed rules cannot be deleted individually; disable the rule or update its profile."
+                )
             self._close_active_failure(expectation, transaction)
             self._expectation_repo.delete(
                 expectation_id, retain_history=True, **transaction_args

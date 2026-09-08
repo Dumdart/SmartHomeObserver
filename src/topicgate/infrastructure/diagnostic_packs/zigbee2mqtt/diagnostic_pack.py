@@ -6,6 +6,7 @@ from topicgate.core.models.health import Condition
 from topicgate.core.models.health import HealthExpectation
 from topicgate.core.models.health import HealthSeverity
 from topicgate.core.models.health import TopicTarget
+from topicgate.core.models.diagnostic_profile import expectation_id_for_rule
 from topicgate.infrastructure.diagnostic_packs.zigbee2mqtt.json_condition import (
     Zigbee2MqttJsonCondition,
 )
@@ -37,20 +38,25 @@ class Zigbee2MqttDiagnosticPack:
     def build_expectations(
         self,
         broker_id: UUID,
+        profile_id: UUID | None = None,
     ) -> tuple[HealthExpectation, ...]:
         return tuple(
             HealthExpectation(
-                expectation_id=uuid5(
-                    NAMESPACE_URL,
-                    ":".join(
-                        (
-                            "topicgate",
-                            self.reference.pack_id,
-                            self.reference.version,
-                            check.check_id,
-                            str(broker_id),
-                        )
-                    ),
+                expectation_id=(
+                    expectation_id_for_rule(profile_id, check.check_id)
+                    if profile_id is not None
+                    else uuid5(
+                        NAMESPACE_URL,
+                        ":".join(
+                            (
+                                "topicgate",
+                                self.reference.pack_id,
+                                self.reference.version,
+                                check.check_id,
+                                str(broker_id),
+                            )
+                        ),
+                    )
                 ),
                 revision=1,
                 enabled=True,
@@ -64,6 +70,10 @@ class Zigbee2MqttDiagnosticPack:
                 actions=frozenset(),
                 name=check.name,
                 description=check.description,
+                profile_id=profile_id,
+                rule_id=check.check_id,
+                rule_schema_version=1,
+                source_kind="pack",
             )
             for check in self._checks
         )

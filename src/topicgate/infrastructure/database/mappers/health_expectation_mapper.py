@@ -17,6 +17,7 @@ from topicgate.core.models.health.expectation_target import TopicTarget
 from topicgate.core.models.health.health_enums import ActionKind
 from topicgate.core.models.health.health_enums import HealthSeverity
 from topicgate.core.models.health.health_expectation import HealthExpectation
+from topicgate.core.models.diagnostic_profile import normalize_rule_id
 from topicgate.infrastructure.database.models.health_expectation_row import (
     HealthExpectationRow,
 )
@@ -27,22 +28,31 @@ class HealthExpectationMapper:
 
     @staticmethod
     def to_row(expectation: HealthExpectation) -> HealthExpectationRow:
+        is_pack = expectation.source_kind == "pack"
         return HealthExpectationRow(
             expectation_id=expectation.expectation_id,
             revision=expectation.revision,
-            enabled=expectation.enabled,
-            severity=expectation.severity.value,
-            target=HealthExpectationMapper._target_to_dict(expectation.target),
-            condition=HealthExpectationMapper._condition_to_dict(
-                expectation.condition
+            enabled=None if is_pack else expectation.enabled,
+            severity=None if is_pack else expectation.severity.value,
+            target=None if is_pack else HealthExpectationMapper._target_to_dict(expectation.target),
+            condition=None if is_pack else HealthExpectationMapper._condition_to_dict(expectation.condition),
+            actions=None if is_pack else sorted(action.value for action in expectation.actions),
+            name=None if is_pack else expectation.name,
+            description=None if is_pack else expectation.description,
+            profile_id=expectation.profile_id,
+            rule_id=expectation.rule_id,
+            normalized_rule_id=(
+                normalize_rule_id(expectation.rule_id) if expectation.rule_id else ""
             ),
-            actions=sorted(action.value for action in expectation.actions),
-            name=expectation.name,
-            description=expectation.description,
+            rule_schema_version=expectation.rule_schema_version,
+            source_kind=expectation.source_kind,
+            pack_override=expectation.pack_override,
         )
 
     @staticmethod
     def to_model(row: HealthExpectationRow) -> HealthExpectation:
+        if getattr(row, "source_kind", "custom") == "pack":
+            raise ValueError("Pack-backed expectations must be hydrated through the repository.")
         return HealthExpectation(
             expectation_id=row.expectation_id,
             revision=row.revision,
@@ -53,6 +63,11 @@ class HealthExpectationMapper:
             actions=frozenset(ActionKind(action) for action in row.actions),
             name=getattr(row, "name", "") or "",
             description=getattr(row, "description", "") or "",
+            profile_id=getattr(row, "profile_id", None),
+            rule_id=getattr(row, "rule_id", "") or "",
+            rule_schema_version=getattr(row, "rule_schema_version", 1) or 1,
+            source_kind=getattr(row, "source_kind", "custom") or "custom",
+            pack_override=getattr(row, "pack_override", None),
         )
 
     @staticmethod
@@ -82,6 +97,18 @@ class HealthExpectationMapper:
 
     @staticmethod
     def _condition_to_dict(condition: Condition) -> dict[str, Any]:
+        from topicgate.infrastructure.diagnostic_packs.zigbee2mqtt.json_condition import (
+            Zigbee2MqttJsonCondition,
+        )
+
+        if isinstance(condition, Zigbee2MqttJsonCondition):
+            return {
+                "kind": "zigbee2mqtt_json_field",
+                "field": condition.field,
+                "condition": HealthExpectationMapper._condition_to_dict(
+                    condition.condition
+                ),
+            }
         if isinstance(condition, EqualCondition):
             return HealthExpectationMapper._encode_condition_values(
                 "equal",
@@ -126,6 +153,19 @@ class HealthExpectationMapper:
             raise ValueError("Expectation condition must be an object.")
 
         kind = value.get("kind")
+        if kind == "zigbee2mqtt_json_field":
+            HealthExpectationMapper._require_condition_keys(
+                value, {"kind", "field", "condition"}
+            )
+            field = value.get("field")
+            if not isinstance(field, str) or not field:
+                raise ValueError("Zigbee2MQTT JSON field must be a string.")
+            from topicgate.infrastructure.diagnostic_packs.zigbee2mqtt.json_condition import (
+                Zigbee2MqttJsonCondition,
+            )
+            return Zigbee2MqttJsonCondition(
+                field, HealthExpectationMapper._dict_to_condition(value.get("condition"))
+            )
         if kind == "equal":
             expected_values = HealthExpectationMapper._decode_condition_values(
                 value,

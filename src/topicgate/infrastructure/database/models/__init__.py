@@ -11,6 +11,7 @@ from topicgate.infrastructure.database.models.expectation_state_row import (
 from topicgate.infrastructure.database.models.health_expectation_row import (
     HealthExpectationRow,
 )
+from topicgate.infrastructure.database.models.diagnostic_profile_row import DiagnosticProfileRow
 from topicgate.infrastructure.database.models.mqtt_config_row import MqttConfigRow
 from topicgate.infrastructure.database.models.mqtt_message_row import MqttMessageRow
 from topicgate.infrastructure.database.models.observer_workspace_row import (
@@ -29,6 +30,7 @@ __all__ = [
     "ExpectationFailureRow",
     "ExpectationStateRow",
     "HealthExpectationRow",
+    "DiagnosticProfileRow",
     "MqttConfigRow",
     "MqttMessageRow",
     "ObserverWorkspaceRow",

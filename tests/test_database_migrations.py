@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import MetaData, create_engine, inspect, text
+from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 
 from topicgate.infrastructure.database.base import Base
@@ -179,3 +180,93 @@ def test_retention_policy_database_constraints_reject_invalid_values(
                 )
     finally:
         database.dispose()
+
+
+def test_health_expectations_migrate_into_broker_default_profile(tmp_path) -> None:
+    database_path = tmp_path / "pre-profiles.db"
+    url = f"sqlite:///{database_path.as_posix()}"
+    engine = create_engine(url)
+    broker_id = uuid4()
+    expectation_id = uuid4()
+    workspace_id = uuid4()
+    with engine.begin() as connection:
+        command.upgrade(_alembic_config(connection), "b3e7d2c9f610")
+        metadata = MetaData()
+        metadata.reflect(connection)
+        config_id = connection.execute(
+            metadata.tables["mqtt_config"].insert().values(
+                host="localhost", port=1883, username="", use_tls=False
+            )
+        ).inserted_primary_key[0]
+        connection.execute(
+            metadata.tables["broker_profile"].insert().values(
+                id=broker_id.hex, name="Broker", position=0, is_active=True,
+                mqtt_config_id=config_id,
+            )
+        )
+        connection.execute(
+            metadata.tables["observer_workspace"].insert().values(
+                id=workspace_id.hex, profile_id=broker_id.hex
+            )
+        )
+        connection.execute(
+            metadata.tables["health_expectation"].insert().values(
+                expectation_id=expectation_id.hex, revision=4, enabled=True,
+                severity="critical",
+                target={"kind": "topic", "broker_id": str(broker_id), "topic": "status"},
+                condition={"kind": "topic_exists"}, actions=[], name="Legacy",
+                description="",
+            )
+        )
+    with engine.begin() as connection:
+        command.upgrade(_alembic_config(connection), "head")
+        profile = connection.exec_driver_sql(
+            "SELECT profile_id, name, is_default FROM diagnostic_profile"
+        ).one()
+        migrated = connection.exec_driver_sql(
+            "SELECT expectation_id, revision, profile_id, rule_id FROM health_expectation"
+        ).one()
+    assert profile[1:] == ("Default", 1)
+    assert str(migrated[0]).replace("-", "") == expectation_id.hex
+    assert migrated[1] == 4
+    assert migrated[2] == profile[0]
+    assert migrated[3] == f"legacy-{expectation_id}"
+
+    with engine.begin() as connection:
+        command.downgrade(_alembic_config(connection), "b3e7d2c9f610")
+        assert "diagnostic_profile" not in inspect(connection).get_table_names()
+        columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("health_expectation")
+        }
+        remaining = connection.exec_driver_sql(
+            "SELECT expectation_id, revision FROM health_expectation"
+        ).one()
+    assert "profile_id" not in columns
+    assert str(remaining[0]).replace("-", "") == expectation_id.hex
+    assert remaining[1] == 4
+    engine.dispose()
+
+
+def test_profile_migration_preflights_orphaned_expectations(tmp_path) -> None:
+    database_path = tmp_path / "orphan.db"
+    url = f"sqlite:///{database_path.as_posix()}"
+    engine = create_engine(url)
+    expectation_id = uuid4()
+    with engine.begin() as connection:
+        command.upgrade(_alembic_config(connection), "b3e7d2c9f610")
+        metadata = MetaData()
+        metadata.reflect(connection)
+        connection.execute(
+            metadata.tables["health_expectation"].insert().values(
+                expectation_id=expectation_id.hex, revision=1, enabled=True,
+                severity="critical",
+                target={"kind": "broker", "broker_id": str(uuid4())},
+                condition={"kind": "equal", "expected_value": "online"},
+                actions=[], name="Orphan", description="",
+            )
+        )
+    with engine.begin() as connection:
+        with pytest.raises(Exception, match=str(expectation_id)):
+            command.upgrade(_alembic_config(connection), "head")
+    engine.dispose()

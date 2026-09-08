@@ -22,7 +22,9 @@ class HealthExpectationReader(Protocol):
         topic: str,
     ) -> tuple[HealthExpectation, ...]: ...
 
-    def create(self, expectation: HealthExpectation) -> HealthExpectation: ...
+    def create(
+        self, expectation: HealthExpectation, *, transaction: object | None = None
+    ) -> HealthExpectation: ...
 
     def update(
         self, expectation: HealthExpectation, *, transaction: object | None = None

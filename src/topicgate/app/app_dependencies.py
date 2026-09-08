@@ -39,6 +39,9 @@ from topicgate.infrastructure.repository.expectation_failure_repository import (
 from topicgate.infrastructure.repository.health_expectation_repository import (
     HealthExpectationRepository,
 )
+from topicgate.infrastructure.repository.diagnostic_profile_repository import SqlDiagnosticProfileRepository
+from topicgate.infrastructure.diagnostic_packs import DiagnosticPackRegistry, load_zigbee2mqtt_pack
+from topicgate.app.services.diagnostic_profile_service import DiagnosticProfileService
 from topicgate.infrastructure.repository.expectation_state_repository import (
     ExpectationStateRepository,
 )
@@ -107,7 +110,11 @@ class AppDependencies:
             topic_messages=self.topic_messages,
         )
 
-        self.health_expectation_repo = HealthExpectationRepository(self._db_context)
+        self.diagnostic_pack_registry = DiagnosticPackRegistry((load_zigbee2mqtt_pack(),))
+        self.health_expectation_repo = HealthExpectationRepository(
+            self._db_context, self.diagnostic_pack_registry
+        )
+        self.diagnostic_profile_repo = SqlDiagnosticProfileRepository(self._db_context)
         self.expectation_state_repo = ExpectationStateRepository(self._db_context)
         self.expectation_failure_repo = ExpectationFailureRepository(
             self._db_context
@@ -147,6 +154,14 @@ class AppDependencies:
             subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
                 broker_id
             ).workspace.subscriptions,
+        )
+        self.diagnostic_profiles = DiagnosticProfileService(
+            self.diagnostic_profile_repo,
+            self.health_expectation_repo,
+            self.diagnostic_pack_registry,
+            self._db_context,
+            expectation_state_repository=self.expectation_state_repo,
+            expectation_failure_repository=self.expectation_failure_repo,
         )
         self.failure_history_service = FailureHistoryService(
             expectation_failure_repository=self.expectation_failure_repo,
