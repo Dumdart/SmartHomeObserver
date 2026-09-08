@@ -18,6 +18,7 @@ from topicgate.mcp.api.mcp_api import McpApiContainer
 from topicgate.mcp.api.publish_api import PublishAPI
 from topicgate.mcp.api.snapshot_api import SnapshotAPI
 from topicgate.mcp.api.subscription_api import SubscriptionAPI
+from topicgate.mcp.api.support_bundle_api import SupportBundleAPI
 from topicgate.mcp.api.topic_api import TopicAPI
 from topicgate.mcp.capabilities import McpMode
 from topicgate.mcp.instructions import UNTRUSTED_MQTT_DATA_INSTRUCTIONS
@@ -47,7 +48,12 @@ selecting arbitrarily. Call list_brokers and retry with the broker UUID when nee
 
 list_health_expectations reads bounded definitions without evaluating or persisting.
 query_failure_history is passive and available in every mode. Its response is
-bounded; inspect returned_count and next_cursor."""
+bounded; inspect returned_count and next_cursor.
+
+get_support_bundle returns redacted, bounded diagnostics in JSON or Markdown in
+every mode. It never writes a host file and categorically excludes MQTT payloads.
+Always keep the accompanying redaction manifest and report warnings, omissions,
+and truncation metadata when sharing the result."""
 
 _SNAPSHOT_INSTRUCTIONS += "\n\n" + UNTRUSTED_MQTT_DATA_INSTRUCTIONS
 
@@ -131,6 +137,7 @@ class Server:
                     self.resolver,
                     self.dependencies.health_wait_service,
                 ),
+                SupportBundleAPI(self.dependencies.support_bundle_exporter),
                 ExpectationAPI(
                     self.dependencies.expectation_management_service,
                     self.resolver,

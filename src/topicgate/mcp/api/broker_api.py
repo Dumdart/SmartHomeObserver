@@ -137,13 +137,21 @@ class BrokerAPI(MCPApi):
 
     @tool()
     async def activate_broker(self, broker_id: UUID | str) -> BrokerSummary:
-        """Make a broker profile active and connect it.
+        """Make a broker profile active, then attempt to connect it.
 
         Side effects: Disconnects the current client, changes the active profile,
-        and connects to the selected MQTT broker.
-        Required state: The selected profile and its credentials must be usable.
+        persists its settings, and attempts to connect the selected MQTT broker.
+        Required state: The selected profile must exist.
         Identifiers: broker_id accepts a UUID or unique case-insensitive name.
-        Failures: Fails for unknown or ambiguous profiles and connection errors.
+        Failures: Unknown or ambiguous profiles leave state unchanged. A connection
+        error leaves the requested profile active and disconnected for offline work.
         """
         resolved = self._resolver.resolve(broker_id)
-        return await self._runtime.activate_broker(resolved.id)
+        try:
+            return await self._runtime.activate_broker(resolved.id)
+        except ConnectionError as error:
+            if self._runtime.active_broker.id != resolved.id:
+                raise
+            raise ConnectionError(
+                f"Broker '{resolved.name}' is active but disconnected: {error}"
+            ) from error

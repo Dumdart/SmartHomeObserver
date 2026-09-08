@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -20,6 +21,7 @@ from topicgate.core.models.observation_cache_administration import (
     CacheUsageSummary,
     ObservationDeletionResult,
 )
+from topicgate.core.models.support_bundle import SupportBundleArtifacts
 from topicgate.core.models.observation_deletion_preview import (
     ObservationDeletionEntry,
     ObservationDeletionPreview,
@@ -181,6 +183,65 @@ async def test_broker_lifecycle_operations_do_not_overlap() -> None:
             assert "already in progress" in str(error)
         else:
             raise AssertionError("Expected overlapping lifecycle operation to fail")
+
+
+async def test_support_bundle_export_runs_collection_and_archive_work_in_threads(
+    tmp_path: Path,
+) -> None:
+    runtime = runtime_for(FakeObserverRepository())
+    artifacts = SupportBundleArtifacts(
+        "{}\n",
+        "# Bundle\n",
+        "{}\n",
+        ("Diagnostics omitted by bounds: 2.",),
+    )
+    exporter = MagicMock()
+    exporter.export.return_value = artifacts
+    writer = MagicMock()
+    destination = tmp_path / "support.zip"
+    writer.write.return_value = destination
+    view_model = MainViewModel(
+        runtime,
+        support_bundle_exporter=exporter,
+        support_bundle_archive_writer=writer,
+    )
+
+    async def run_in_place(function, *args):
+        return function(*args)
+
+    with patch(
+        "topicgate.gui.main_view_model.asyncio.to_thread",
+        new_callable=AsyncMock,
+        side_effect=run_in_place,
+    ) as to_thread:
+        result = await view_model.export_support_bundle(destination)
+
+    assert result.destination == destination
+    assert result.warnings == artifacts.warnings
+    assert to_thread.await_count == 2
+    options = exporter.export.call_args.args[0]
+    assert options.include_payloads is False
+    writer.write.assert_called_once_with(destination, artifacts)
+    assert not view_model.is_busy("support-bundle")
+
+
+async def test_support_bundle_exporter_errors_leave_no_archive_and_clear_busy(
+    tmp_path: Path,
+) -> None:
+    exporter = MagicMock()
+    exporter.export.side_effect = RuntimeError("collection failed")
+    writer = MagicMock()
+    view_model = MainViewModel(
+        runtime_for(FakeObserverRepository()),
+        support_bundle_exporter=exporter,
+        support_bundle_archive_writer=writer,
+    )
+
+    with pytest.raises(RuntimeError, match="collection failed"):
+        await view_model.export_support_bundle(tmp_path / "support.zip")
+
+    writer.write.assert_not_called()
+    assert not view_model.is_busy("support-bundle")
 
 
 async def test_stored_observation_query_builds_filter_and_runs_in_thread() -> None:
@@ -958,7 +1019,7 @@ async def test_deleting_active_profile_switches_before_removing_it() -> None:
     await scenario()
 
 
-async def test_failed_mqtt_configuration_is_not_stored() -> None:
+async def test_failed_mqtt_configuration_is_stored_for_offline_editing() -> None:
     class FailingObserverRepository(FakeObserverRepository):
         async def update_broker(
             self,
@@ -972,7 +1033,14 @@ async def test_failed_mqtt_configuration_is_not_stored() -> None:
         broker_repository = FakeBrokerRepository(initial)
         view_model = MainViewModel(runtime_for(FailingObserverRepository(), broker_repository))
         logs: list[str] = []
+        changes: list[bool] = []
+        health_changes: list[bool] = []
+        view_model._health_report_result = MagicMock(
+            broker_id=view_model.active_broker_profile.id
+        )
         view_model.log_message.connect(logs.append)
+        view_model.configuration_changed.connect(lambda: changes.append(True))
+        view_model.health_changed.connect(lambda: health_changes.append(True))
 
         try:
             await view_model.update_mqtt_config(MqttConfig("new", 8883, "", ""))
@@ -981,14 +1049,54 @@ async def test_failed_mqtt_configuration_is_not_stored() -> None:
         else:
             raise AssertionError("Expected the broker update to fail")
 
-        assert view_model.mqtt_config == initial
-        assert broker_repository.updated_mqtt == []
+        assert view_model.mqtt_config == MqttConfig("new", 8883, "", "")
+        assert broker_repository.updated_mqtt == [
+            MqttConfig("new", 8883, "", "")
+        ]
+        assert changes == [True]
+        assert view_model.health_report is None
+        assert health_changes == [True]
         assert logs == [
             "Connecting to MQTT broker: new:8883",
-            "Broker update failed: broker unavailable",
+            "Broker selected but connection failed: broker unavailable",
         ]
 
     await scenario()
+
+
+async def test_failed_broker_switch_updates_health_report_scope() -> None:
+    class FailingObserverRepository(FakeObserverRepository):
+        async def update_broker(
+            self,
+            new_config: MqttConfig,
+            subscriptions: tuple[Subscription, ...] | None = None,
+        ) -> None:
+            self.connection_status = "disconnected"
+            raise ConnectionError("broker unavailable")
+
+    brokers = FakeBrokerRepository(MqttConfig("default", 1883, "", ""))
+    replacement = brokers.get_all_profiles()[1]
+    health_query = MagicMock()
+    health_query.get_health_report.side_effect = lambda broker_id: MagicMock(
+        broker_id=broker_id
+    )
+    view_model = MainViewModel(
+        runtime_for(FailingObserverRepository(), brokers),
+        health_query_service=health_query,
+    )
+
+    with pytest.raises(ConnectionError, match="broker unavailable"):
+        await view_model.activate_broker_profile(
+            replacement.id,
+            replacement.config,
+        )
+
+    report = view_model.refresh_health()
+
+    assert view_model.active_broker_profile.id == replacement.id
+    assert view_model.connection_status == "disconnected"
+    assert report.broker_id == replacement.id
+    health_query.get_health_report.assert_called_once_with(replacement.id)
 
 
 async def test_removing_subscription_updates_topics_and_clears_stale_selection() -> None:

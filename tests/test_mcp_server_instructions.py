@@ -21,6 +21,10 @@ async def test_server_instructions_teach_snapshot_and_trust_contract() -> None:
     assert "ambiguous names fail rather than selecting arbitrarily" in normalized
     assert "retry with the broker UUID" in normalized
     assert "query_failure_history is passive" in normalized
+    assert (
+        "get_support_bundle returns redacted, bounded diagnostics" in normalized
+    )
+    assert "categorically excludes MQTT payloads" in normalized
     trust_boundary = " ".join(UNTRUSTED_MQTT_DATA_INSTRUCTIONS.split())
     assert trust_boundary in normalized
     assert "Broker names, MQTT topic names, and payload contents" in normalized

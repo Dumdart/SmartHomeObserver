@@ -146,14 +146,11 @@ class ObserverMqttRepository:
     ) -> None:
         """Replace the MQTT connection with one configured for a new broker."""
         async with self._lifecycle_lock:
-            previous_gate = self._mqtt_gate
-            previous_manager = self._subscription_manager
-            was_running = self._is_running
             active_subscriptions = list(
                 self.subscriptions if subscriptions is None else subscriptions
             )
 
-            if was_running or self._mqtt_gate.is_started:
+            if self._is_running or self._mqtt_gate.is_started:
                 await self._stop()
 
             self._mqtt_gate = MqttGate(
@@ -165,19 +162,7 @@ class ObserverMqttRepository:
                 self._mqtt_gate, self.handle_message
             )
 
-            try:
-                await self._start()
-            except Exception:
-                # Check that a failed broker change leaves the repository using
-                # the previous, known configuration rather than the failed one.
-                self._mqtt_gate = previous_gate
-                self._subscription_manager = previous_manager
-                if was_running:
-                    try:
-                        await self._start()
-                    except Exception:
-                        pass
-                raise
+            await self._start()
 
     def get_value(self, topic: str) -> bytes | None:
         state = self.get_state(topic)

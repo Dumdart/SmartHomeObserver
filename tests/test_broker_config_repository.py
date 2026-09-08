@@ -293,6 +293,23 @@ def test_creating_passwordless_profile_does_not_mutate_credentials(
     credentials.delete_password.assert_not_called()
 
 
+def test_profile_summaries_do_not_access_credentials(credential_store) -> None:
+    credentials = MagicMock(wraps=credential_store)
+    repository = BrokerProfileService(credential_store=credentials)
+    repository.create_profile(
+        "Authenticated",
+        MqttConfig("broker", 8883, "observer", "secret", True),
+    )
+    credentials.reset_mock()
+
+    summaries = repository.list_profile_summaries()
+
+    assert any(item.name == "Authenticated" for item in summaries)
+    credentials.get_password.assert_not_called()
+    credentials.set_password.assert_not_called()
+    credentials.delete_password.assert_not_called()
+
+
 def test_clearing_existing_profile_password_deletes_credential(
     credential_store,
 ) -> None:

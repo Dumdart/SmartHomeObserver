@@ -1,0 +1,60 @@
+{
+  "pack_id": "zigbee2mqtt",
+  "version": "1.0.0",
+  "checks": [
+    {
+      "id": "bridge-online",
+      "name": "Zigbee2MQTT bridge is online",
+      "description": "The Zigbee2MQTT bridge reports an online state.",
+      "topic": "zigbee2mqtt/bridge/state",
+      "json_field": "state",
+      "condition": {"kind": "equal", "expected": "online"}
+    },
+    {
+      "id": "kitchen-available",
+      "name": "Kitchen sensor is available",
+      "description": "The kitchen sensor reports online availability.",
+      "topic": "zigbee2mqtt/kitchen_sensor/availability",
+      "json_field": "state",
+      "condition": {"kind": "equal", "expected": "online"}
+    },
+    {
+      "id": "kitchen-temperature",
+      "name": "Kitchen temperature is in range",
+      "description": "The kitchen temperature remains between 18 and 26 degrees Celsius.",
+      "topic": "zigbee2mqtt/kitchen_sensor",
+      "json_field": "temperature",
+      "condition": {"kind": "numeric_range", "minimum": 18, "maximum": 26}
+    },
+    {
+      "id": "garage-available",
+      "name": "Garage sensor is available",
+      "description": "The garage sensor reports online availability.",
+      "topic": "zigbee2mqtt/garage_sensor/availability",
+      "json_field": "state",
+      "condition": {"kind": "equal", "expected": "online"}
+    },
+    {
+      "id": "attic-fresh",
+      "name": "Attic sensor is fresh",
+      "description": "The attic sensor has reported within the last 60 seconds.",
+      "topic": "zigbee2mqtt/attic_sensor",
+      "condition": {"kind": "freshness", "max_age_seconds": 60}
+    },
+    {
+      "id": "basement-temperature",
+      "name": "Basement freezer temperature is in range",
+      "description": "The basement freezer remains between -25 and -15 degrees Celsius.",
+      "topic": "zigbee2mqtt/basement_freezer",
+      "json_field": "temperature",
+      "condition": {"kind": "numeric_range", "minimum": -25, "maximum": -15}
+    },
+    {
+      "id": "nursery-present",
+      "name": "Nursery sensor topic is present",
+      "description": "The nursery sensor listed by Zigbee2MQTT has published state.",
+      "topic": "zigbee2mqtt/nursery_sensor",
+      "condition": {"kind": "topic_exists"}
+    }
+  ]
+}

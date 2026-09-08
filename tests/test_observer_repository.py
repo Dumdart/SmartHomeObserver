@@ -533,7 +533,7 @@ async def test_update_broker_connects_when_previously_disconnected() -> None:
     await scenario()
 
 
-async def test_failed_broker_update_restores_the_previous_connection() -> None:
+async def test_failed_broker_update_keeps_new_configuration_disconnected() -> None:
     async def scenario() -> None:
         repository, previous_manager = build_repository()
         repository._is_running = True
@@ -564,9 +564,9 @@ async def test_failed_broker_update_restores_the_previous_connection() -> None:
             else:
                 raise AssertionError("Expected the broker update to fail")
 
-        assert repository._mqtt_gate is previous_gate
-        assert repository._subscription_manager is previous_manager
-        previous_gate.start.assert_awaited_once()
-        assert repository.connection_status == ConnectionStatus.CONNECTED
+        assert repository._mqtt_gate is replacement_gate
+        assert repository._subscription_manager is replacement_manager
+        previous_gate.start.assert_not_awaited()
+        assert repository.connection_status == ConnectionStatus.DISCONNECTED
 
     await scenario()

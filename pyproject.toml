@@ -85,4 +85,5 @@ topicgate = [
     "infrastructure/database/alembic/*.mako",
     "infrastructure/database/alembic/README",
     "infrastructure/database/alembic/versions/*.py",
+    "infrastructure/diagnostic_packs/zigbee2mqtt/v1/*.json",
 ]

@@ -183,7 +183,7 @@ async def test_runtime_connects_with_a_stored_password_from_a_broker_summary() -
     await scenario()
 
 
-async def test_runtime_activates_and_persists_a_broker_only_after_connecting() -> None:
+async def test_runtime_persists_and_activates_a_broker_before_connecting() -> None:
     async def scenario() -> None:
         default = profile("Default")
         selected = profile("Local", "local")
@@ -272,7 +272,7 @@ async def test_runtime_preserves_topic_states_across_broker_switches() -> None:
     await scenario()
 
 
-async def test_runtime_does_not_persist_a_failed_broker_activation() -> None:
+async def test_runtime_persists_a_failed_broker_activation_for_offline_editing() -> None:
     async def scenario() -> None:
         selected = profile("Default")
         runtime, brokers, mqtt = runtime_with((selected,))
@@ -288,13 +288,15 @@ async def test_runtime_does_not_persist_a_failed_broker_activation() -> None:
         else:
             raise AssertionError("Expected broker activation to fail")
 
-        brokers.update_profile.assert_not_called()
-        brokers.select_active_profile.assert_not_called()
+        brokers.update_profile.assert_called_once_with(selected)
+        brokers.select_active_profile.assert_called_once_with(selected.id)
+        assert runtime.active_broker.id == selected.id
+        assert runtime.active_broker.config.host == "new"
 
     await scenario()
 
 
-async def test_failed_broker_switch_restarts_the_previous_repository() -> None:
+async def test_failed_broker_switch_keeps_the_requested_repository_active() -> None:
     async def scenario() -> None:
         default = profile("Default")
         selected = profile("Local", "local")
@@ -322,10 +324,11 @@ async def test_failed_broker_switch_restarts_the_previous_repository() -> None:
         else:
             raise AssertionError("Expected broker activation to fail")
 
-        assert runtime.active_repo is default_repo
+        assert runtime.active_repo is selected_repo
+        assert runtime.active_broker.id == selected.id
         default_repo.stop.assert_awaited_once_with()
-        default_repo.start.assert_awaited_once_with()
-        brokers.select_active_profile.assert_not_called()
+        default_repo.start.assert_not_awaited()
+        brokers.select_active_profile.assert_called_once_with(selected.id)
 
     await scenario()
 
