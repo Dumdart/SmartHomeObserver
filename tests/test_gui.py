@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QObject, QSettings, Qt
@@ -124,6 +126,7 @@ def test_health_action_opens_broker_scoped_inspector() -> None:
     assert stack.currentWidget() is inspector
     assert inspector.findChild(QTableWidget, "currentBrokerHealthTable") is not None
     assert inspector.findChild(QTableWidget, "currentTopicHealthTable") is not None
+    assert inspector.findChild(QTableWidget, "findingDeltaTable") is not None
     assert inspector.findChild(QWidget, "brokerExpectationEditor") is not None
     assert inspector.findChild(QTableWidget, "healthHistoryTable") is not None
     window.close()
@@ -722,6 +725,93 @@ def test_health_history_deletes_selected_episode_after_confirmation() -> None:
     application.processEvents()
 
 
+@pytest.mark.parametrize(
+    ("source_kind", "button_text", "service_method"),
+    (
+        ("custom", "Remove", "delete_expectation"),
+        ("pack", "Disable", "disable_expectation"),
+    ),
+)
+def test_health_overview_removes_selected_expectation_after_confirmation(
+    source_kind: str,
+    button_text: str,
+    service_method: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    runtime = runtime_for(repository)
+    expectation_id = uuid4()
+    finding = SimpleNamespace(
+        expectation_id=expectation_id,
+        name="Connected",
+        target_kind="broker",
+        target="broker",
+        status=HealthStatus.PROBLEM,
+        evidence_summary="actual=disconnected; expected=connected",
+        evidence_truncated=False,
+    )
+    report = SimpleNamespace(
+        broker_id=runtime.active_broker.id,
+        evaluated_at=datetime.now(timezone.utc),
+        aggregate_status=HealthStatus.PROBLEM,
+        evidence_complete=True,
+        observation_status=HealthStatus.HEALTHY,
+        observation_findings=(),
+        expectation_findings=(finding,),
+        active_failure_count=1,
+        returned_count=1,
+        omitted_count=0,
+        checkpoint=None,
+        delta=None,
+    )
+    health_query = MagicMock()
+    health_query.get_health_report.return_value = report
+    management = MagicMock()
+    management.list_expectations.return_value = (
+        HealthExpectation(
+            expectation_id,
+            1,
+            True,
+            HealthSeverity.CRITICAL,
+            BrokerTarget(runtime.active_broker.id),
+            EqualCondition("connected"),
+            frozenset(),
+            "Connected",
+            source_kind=source_kind,
+        ),
+    )
+    view_model = MainViewModel(
+        runtime,
+        health_query_service=health_query,
+        expectation_management_service=management,
+    )
+    inspector = HealthInspector(view_model)
+    remove_button = inspector.findChild(
+        QPushButton, "removeHealthExpectationButton"
+    )
+    assert remove_button.property("danger") is True
+    assert not remove_button.isEnabled()
+
+    view_model.refresh_health()
+    inspector.findChild(QTableWidget, "currentBrokerHealthTable").selectRow(0)
+    assert remove_button.isEnabled()
+    assert remove_button.text() == button_text
+
+    with patch(
+        "topicgate.gui.components.health_inspector.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        remove_button.click()
+
+    getattr(management, service_method).assert_called_once_with(
+        expectation_id,
+        broker_id=runtime.active_broker.id,
+    )
+    assert not remove_button.isEnabled()
+    inspector.deleteLater()
+    application.processEvents()
+
+
 def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
@@ -919,6 +1009,59 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
     ).text()
     assert window._inspector_stack.currentWidget() is window._topic_details
     window.close()
+    application.processEvents()
+
+
+def test_health_inspector_renders_latest_finding_delta() -> None:
+    application = QApplication.instance() or QApplication([])
+    runtime = runtime_for(FakeGuiRepository())
+    broker_id = runtime.active_broker.id
+    event = SimpleNamespace(
+        kind="severity_change",
+        rule_id="device.online",
+        matched_topic="devices/kitchen/status",
+        previous_status=HealthStatus.PROBLEM,
+        current_status=HealthStatus.PROBLEM,
+        previous_severity=HealthSeverity.WARNING,
+        current_severity=HealthSeverity.CRITICAL,
+    )
+    report = SimpleNamespace(
+        broker_id=broker_id,
+        evaluated_at=datetime.now(timezone.utc),
+        aggregate_status=HealthStatus.PROBLEM,
+        evidence_complete=True,
+        observation_status=HealthStatus.HEALTHY,
+        observation_findings=(),
+        expectation_findings=(),
+        active_failure_count=1,
+        returned_count=0,
+        omitted_count=0,
+        checkpoint=SimpleNamespace(complete=True, omitted_count=0),
+        delta=SimpleNamespace(
+            events=(event,),
+            complete=True,
+            returned_count=1,
+            omitted_count=0,
+        ),
+    )
+    health_query = MagicMock()
+    health_query.get_health_report.return_value = report
+    inspector = HealthInspector(
+        MainViewModel(runtime, health_query_service=health_query)
+    )
+
+    inspector.refresh_health()
+
+    table = inspector.findChild(QTableWidget, "findingDeltaTable")
+    message = inspector.findChild(QLabel, "findingDeltaMessage")
+    assert table.rowCount() == 1
+    assert table.item(0, 0).text() == "Severity Change"
+    assert table.item(0, 1).text() == "device.online"
+    assert table.item(0, 2).text() == "devices/kitchen/status"
+    assert table.item(0, 3).text() == "Failed"
+    assert table.item(0, 4).text() == "Warning -> Critical"
+    assert message.text() == "Showing 1 finding change event(s)."
+    inspector.close()
     application.processEvents()
 
 
