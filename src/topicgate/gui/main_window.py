@@ -950,9 +950,9 @@ class MainWindow(QMainWindow):
         previous_profile_id = self._view_model.active_broker_profile.id
         try:
             await self._view_model.activate_broker_profile(profile_id, mqtt_config)
+        finally:
             if self._view_model.active_broker_profile.id != previous_profile_id:
                 self._show_snapshot()
-        finally:
             self._render_connection_controls()
             self._observer_tree.set_connection_busy(False)
 
@@ -1048,7 +1048,16 @@ class MainWindow(QMainWindow):
             )
         except Exception as error:
             dialog.set_applying(False)
-            QMessageBox.warning(self, "Broker update failed", str(error))
+            if self._view_model.active_broker_profile.id == profile_id:
+                self._settings.setValue("onboarding/brokerConfigured", True)
+                QMessageBox.warning(
+                    self,
+                    "Broker selected but offline",
+                    "The broker profile was saved and selected, but TopicGate "
+                    f"could not connect: {error}",
+                )
+            else:
+                QMessageBox.warning(self, "Broker update failed", str(error))
             return
         self._settings.setValue("onboarding/brokerConfigured", True)
         self._settings.setValue("onboarding/connectionTested", True)

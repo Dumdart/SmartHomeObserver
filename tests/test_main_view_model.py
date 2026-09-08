@@ -958,7 +958,7 @@ async def test_deleting_active_profile_switches_before_removing_it() -> None:
     await scenario()
 
 
-async def test_failed_mqtt_configuration_is_not_stored() -> None:
+async def test_failed_mqtt_configuration_is_stored_for_offline_editing() -> None:
     class FailingObserverRepository(FakeObserverRepository):
         async def update_broker(
             self,
@@ -972,7 +972,14 @@ async def test_failed_mqtt_configuration_is_not_stored() -> None:
         broker_repository = FakeBrokerRepository(initial)
         view_model = MainViewModel(runtime_for(FailingObserverRepository(), broker_repository))
         logs: list[str] = []
+        changes: list[bool] = []
+        health_changes: list[bool] = []
+        view_model._health_report_result = MagicMock(
+            broker_id=view_model.active_broker_profile.id
+        )
         view_model.log_message.connect(logs.append)
+        view_model.configuration_changed.connect(lambda: changes.append(True))
+        view_model.health_changed.connect(lambda: health_changes.append(True))
 
         try:
             await view_model.update_mqtt_config(MqttConfig("new", 8883, "", ""))
@@ -981,14 +988,54 @@ async def test_failed_mqtt_configuration_is_not_stored() -> None:
         else:
             raise AssertionError("Expected the broker update to fail")
 
-        assert view_model.mqtt_config == initial
-        assert broker_repository.updated_mqtt == []
+        assert view_model.mqtt_config == MqttConfig("new", 8883, "", "")
+        assert broker_repository.updated_mqtt == [
+            MqttConfig("new", 8883, "", "")
+        ]
+        assert changes == [True]
+        assert view_model.health_report is None
+        assert health_changes == [True]
         assert logs == [
             "Connecting to MQTT broker: new:8883",
-            "Broker update failed: broker unavailable",
+            "Broker selected but connection failed: broker unavailable",
         ]
 
     await scenario()
+
+
+async def test_failed_broker_switch_updates_health_report_scope() -> None:
+    class FailingObserverRepository(FakeObserverRepository):
+        async def update_broker(
+            self,
+            new_config: MqttConfig,
+            subscriptions: tuple[Subscription, ...] | None = None,
+        ) -> None:
+            self.connection_status = "disconnected"
+            raise ConnectionError("broker unavailable")
+
+    brokers = FakeBrokerRepository(MqttConfig("default", 1883, "", ""))
+    replacement = brokers.get_all_profiles()[1]
+    health_query = MagicMock()
+    health_query.get_health_report.side_effect = lambda broker_id: MagicMock(
+        broker_id=broker_id
+    )
+    view_model = MainViewModel(
+        runtime_for(FailingObserverRepository(), brokers),
+        health_query_service=health_query,
+    )
+
+    with pytest.raises(ConnectionError, match="broker unavailable"):
+        await view_model.activate_broker_profile(
+            replacement.id,
+            replacement.config,
+        )
+
+    report = view_model.refresh_health()
+
+    assert view_model.active_broker_profile.id == replacement.id
+    assert view_model.connection_status == "disconnected"
+    assert report.broker_id == replacement.id
+    health_query.get_health_report.assert_called_once_with(replacement.id)
 
 
 async def test_removing_subscription_updates_topics_and_clears_stale_selection() -> None:

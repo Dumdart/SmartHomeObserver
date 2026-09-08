@@ -1166,7 +1166,7 @@ class MainViewModel(QObject):
         mqtt_config: MqttConfig,
         profile_name: str | None = None,
     ) -> None:
-        """Connect with a profile and make it active only after success."""
+        """Select and save a profile, then attempt to connect it."""
         async with self._operation("broker"):
             profile = self._runtime.get_broker(profile_id)
             profile_changed = profile.id != self.active_broker_profile.id
@@ -1180,20 +1180,32 @@ class MainViewModel(QObject):
                     profile_name,
                 )
             except Exception as error:
-                self.log_message.emit(f"Broker update failed: {error}")
+                if self.active_broker_profile.id == profile_id:
+                    await self._refresh_after_broker_selection(profile_changed)
+                    self.log_message.emit(
+                        f"Broker selected but connection failed: {error}"
+                    )
+                else:
+                    self.log_message.emit(f"Broker update failed: {error}")
                 raise
-            if profile_changed:
-                await self._restart_observer_tasks()
-                self._topic = ""
-                self._health_report_result = None
-                self._health_history_result = FailureHistoryResult((), None, 0)
-                self.health_changed.emit()
-            self.refresh_snapshot()
-            self.subscriptions_changed.emit()
-            self.configuration_changed.emit()
+            await self._refresh_after_broker_selection(profile_changed)
             self.log_message.emit(
                 f"Updated MQTT broker: {mqtt_config.host}:{mqtt_config.port}"
             )
+
+    async def _refresh_after_broker_selection(
+        self,
+        profile_changed: bool,
+    ) -> None:
+        if profile_changed:
+            await self._restart_observer_tasks()
+            self._topic = ""
+            self._health_history_result = FailureHistoryResult((), None, 0)
+        self._health_report_result = None
+        self.health_changed.emit()
+        self.refresh_snapshot()
+        self.subscriptions_changed.emit()
+        self.configuration_changed.emit()
 
     def save_broker_profile(
         self,

@@ -362,27 +362,20 @@ class TopicGateRuntime(ServiceItem):
             if name is not None
             else profile.name
         )
-        previous_broker_id = self._active_broker_id
         previous_repo = self.active_repo
         selected_repo = self._mqtt_repositories[broker_id]
         switching_repositories = selected_repo is not previous_repo
-        if switching_repositories:
-            await previous_repo.stop()
-        try:
-            await selected_repo.update_broker(
-                config,
-                subscriptions=profile.workspace.subscriptions,
-            )
-        except Exception:
-            if switching_repositories:
-                await previous_repo.start()
-            raise
         profile.name = normalized_name
         profile.config = config
         self._brokers.update_profile(profile)
         self._brokers.select_active_profile(broker_id)
-        if broker_id != previous_broker_id:
-            self._active_broker_id = broker_id
+        self._active_broker_id = broker_id
+        if switching_repositories:
+            await previous_repo.stop()
+        await selected_repo.update_broker(
+            config,
+            subscriptions=profile.workspace.subscriptions,
+        )
         return self.active_broker
 
     async def delete_broker(self, broker_id: UUID) -> BrokerSummary:

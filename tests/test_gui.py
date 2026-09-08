@@ -2581,7 +2581,7 @@ async def test_applying_broker_settings_updates_the_view_model_and_closes_dialog
     await scenario()
 
 
-async def test_failed_broker_update_keeps_dialog_open_and_shows_error() -> None:
+async def test_failed_broker_update_keeps_saved_offline_profile_editable() -> None:
     class FailingGuiRepository(FakeGuiRepository):
         async def update_broker(
             self,
@@ -2609,11 +2609,14 @@ async def test_failed_broker_update_keeps_dialog_open_and_shows_error() -> None:
 
         assert dialog.isVisible()
         assert dialog.result() == QDialog.DialogCode.Rejected
-        assert broker_repository.updated_mqtt == []
+        assert broker_repository.updated_mqtt == [
+            MqttConfig("old", 1883, "", "")
+        ]
         warning.assert_called_once_with(
             window,
-            "Broker update failed",
-            "broker unavailable",
+            "Broker selected but offline",
+            "The broker profile was saved and selected, but TopicGate could not "
+            "connect: broker unavailable",
         )
         window.close()
         application.processEvents()
