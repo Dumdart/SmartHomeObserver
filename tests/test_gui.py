@@ -892,6 +892,8 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
         active_failure_count=0,
         returned_count=1,
         omitted_count=0,
+        checkpoint=None,
+        delta=None,
     )
     health_query = MagicMock()
     health_query.get_health_report.return_value = report

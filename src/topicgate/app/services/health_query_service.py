@@ -6,11 +6,18 @@ from topicgate.app.models.expectation_health_report import (
     ExpectationHealthReport,
     FailureHistoryItem,
     FailureHistoryResult,
+    FindingCheckpoint,
 )
 from topicgate.app.services.expectation_management_service import (
     ExpectationManagementService,
 )
 from topicgate.app.services.failure_history_service import FailureHistoryService
+from topicgate.app.services.finding_delta_service import (
+    build_finding_checkpoint,
+    build_finding_delta,
+    finding_fingerprint,
+    validate_finding_checkpoint,
+)
 from topicgate.app.services.health_expectation_service import (
     DEFAULT_STALE_AFTER_SECONDS,
     HealthExpectationService,
@@ -18,12 +25,15 @@ from topicgate.app.services.health_expectation_service import (
 from topicgate.app.services.health_report_service import HealthReportService
 from topicgate.core.models.health import (
     BrokerTarget,
+    DiagnosticReport,
     ExpectationEvaluation,
     ExpectationFailure,
     HealthExpectation,
+    HealthSeverity,
     HealthStatus,
     TopicTarget,
-    DiagnosticReport,
+    default_profile_id,
+    normalize_rule_id,
 )
 
 
@@ -53,19 +63,34 @@ class HealthQueryService:
         *,
         stale_after_seconds: float = DEFAULT_STALE_AFTER_SECONDS,
         limit: int = DEFAULT_HEALTH_RESULT_LIMIT,
+        checkpoint: FindingCheckpoint | None = None,
     ) -> ExpectationHealthReport:
         limit = _validate_limit(limit)
+        if checkpoint is not None:
+            validate_finding_checkpoint(
+                checkpoint,
+                expected_broker_id=broker_id,
+            )
         report = self._evaluator.evaluate_broker(
             broker_id,
             stale_after_seconds=stale_after_seconds,
         )
-        return self.present_report(report, limit=limit)
+        return self.present_report(report, limit=limit, checkpoint=checkpoint)
 
     def present_report(
-        self, report: DiagnosticReport, *, limit: int = DEFAULT_HEALTH_RESULT_LIMIT
+        self,
+        report: DiagnosticReport,
+        *,
+        limit: int = DEFAULT_HEALTH_RESULT_LIMIT,
+        checkpoint: FindingCheckpoint | None = None,
     ) -> ExpectationHealthReport:
         limit = _validate_limit(limit)
         broker_id = report.broker_id
+        if checkpoint is not None:
+            validate_finding_checkpoint(
+                checkpoint,
+                expected_broker_id=broker_id,
+            )
         expectations = {
             item.expectation_id: item
             for item in self._expectation_management.list_expectations(broker_id)
@@ -76,6 +101,7 @@ class HealthQueryService:
                     self._finding(
                         evaluation,
                         expectations.get(evaluation.expectation_id),
+                        broker_id,
                     )
                     for evaluation in report.topic_findings
                 ),
@@ -86,6 +112,16 @@ class HealthQueryService:
             1
             for failure in self._health_report.get_active_failures()
             if self._health_report.broker_identity(failure) == broker_id
+        )
+        replacement_checkpoint = build_finding_checkpoint(broker_id, findings)
+        delta = (
+            None
+            if checkpoint is None
+            else build_finding_delta(
+                checkpoint,
+                broker_id=broker_id,
+                findings=findings,
+            )
         )
         return ExpectationHealthReport(
             broker_id=report.broker_id,
@@ -98,6 +134,8 @@ class HealthQueryService:
             active_failure_count=active_failure_count,
             returned_count=min(len(findings), limit),
             omitted_count=max(0, len(findings) - limit),
+            checkpoint=replacement_checkpoint,
+            delta=delta,
         )
 
     def query_failure_history(
@@ -140,10 +178,40 @@ class HealthQueryService:
         self,
         evaluation: ExpectationEvaluation,
         expectation: HealthExpectation | None,
+        broker_id: UUID,
     ) -> ExpectationHealthFinding:
         evidence, truncated = _bounded(evaluation.evidence_summary)
+        profile_id = (
+            default_profile_id(broker_id)
+            if expectation is None or expectation.profile_id is None
+            else expectation.profile_id
+        )
+        rule_id = normalize_rule_id(
+            f"legacy-{evaluation.expectation_id}"
+            if expectation is None or not expectation.rule_id
+            else expectation.rule_id
+        )
+        matched_topic = (
+            expectation.target.topic
+            if expectation is not None and isinstance(expectation.target, TopicTarget)
+            else None
+        )
         return ExpectationHealthFinding(
             expectation_id=evaluation.expectation_id,
+            profile_id=profile_id,
+            rule_id=rule_id,
+            severity=(
+                HealthSeverity.CRITICAL
+                if expectation is None
+                else expectation.severity
+            ),
+            matched_topic=matched_topic,
+            fingerprint=finding_fingerprint(
+                profile_id=profile_id,
+                rule_id=rule_id,
+                broker_id=broker_id,
+                matched_topic=matched_topic,
+            ),
             expectation_revision=evaluation.expectation_revision,
             name="" if expectation is None else expectation.name,
             description="" if expectation is None else expectation.description,

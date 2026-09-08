@@ -4,13 +4,16 @@ from uuid import uuid4
 from topicgate.app.models.expectation_health_report import (
     ExpectationHealthFinding,
     ExpectationHealthReport,
+    FindingCheckpoint,
 )
+from topicgate.app.services.finding_delta_service import finding_fingerprint
 from topicgate.core.models.health import (
     EqualCondition,
     HealthExpectation,
     HealthSeverity,
     HealthStatus,
     TopicTarget,
+    default_profile_id,
 )
 from topicgate.presentation.health_presentation import (
     broker_health_summary,
@@ -34,18 +37,31 @@ def _expectation(*, enabled: bool = True) -> HealthExpectation:
 
 
 def _finding(expectation, status: HealthStatus) -> ExpectationHealthFinding:
+    broker_id = expectation.target.broker_id
+    profile_id = default_profile_id(broker_id)
+    rule_id = f"legacy-{expectation.expectation_id}"
     return ExpectationHealthFinding(
-        expectation.expectation_id,
-        expectation.revision,
-        expectation.name,
-        "",
-        "topic",
-        "devices/status",
-        status,
-        None,
-        "actual=offline; expected=online",
-        True,
-        False,
+        expectation_id=expectation.expectation_id,
+        profile_id=profile_id,
+        rule_id=rule_id,
+        severity=expectation.severity,
+        matched_topic="devices/status",
+        fingerprint=finding_fingerprint(
+            profile_id=profile_id,
+            rule_id=rule_id,
+            broker_id=broker_id,
+            matched_topic="devices/status",
+        ),
+        expectation_revision=expectation.revision,
+        name=expectation.name,
+        description="",
+        target_kind="topic",
+        target="devices/status",
+        status=status,
+        failure_code=None,
+        evidence_summary="actual=offline; expected=online",
+        evidence_complete=True,
+        evidence_truncated=False,
     )
 
 
@@ -61,6 +77,8 @@ def _report(expectation, *, status=HealthStatus.HEALTHY, omitted=0, complete=Tru
         0,
         1,
         omitted,
+        FindingCheckpoint(1, expectation.target.broker_id, (), True, 0),
+        None,
     )
 
 

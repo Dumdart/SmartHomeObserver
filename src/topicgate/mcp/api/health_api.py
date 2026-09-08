@@ -7,6 +7,7 @@ from fastmcp.tools import tool
 from topicgate.app.models.expectation_health_report import (
     ExpectationHealthReport,
     FailureHistoryResult,
+    FindingCheckpoint,
 )
 from topicgate.app.services.broker_resolver import BrokerResolver
 from topicgate.app.services.health_expectation_service import (
@@ -78,6 +79,7 @@ class HealthAPI(MCPApi):
         broker: UUID | str,
         stale_after_seconds: float = DEFAULT_STALE_AFTER_SECONDS,
         limit: int = DEFAULT_HEALTH_RESULT_LIMIT,
+        checkpoint: FindingCheckpoint | None = None,
     ) -> ExpectationHealthReport:
         """Freshly evaluate bounded expectation health for a broker.
 
@@ -86,13 +88,17 @@ class HealthAPI(MCPApi):
         Required state: The broker profile and local health database must exist.
         Identifiers: broker accepts a UUID or unique case-insensitive profile name.
         Failures: Fails for unknown or ambiguous brokers, invalid bounds, or health
-        evaluation and persistence errors.
+        evaluation and persistence errors. Round-trip the returned checkpoint on the
+        next request to receive a bounded delta and replacement checkpoint. Checkpoint
+        and delta completeness/omitted counts disclose whether their 200-item bounds
+        prevented complete recovery or event reporting.
         """
         resolved = self._resolver.resolve(broker)
         return self._query_service.get_health_report(
             resolved.id,
             stale_after_seconds=stale_after_seconds,
             limit=limit,
+            checkpoint=checkpoint,
         )
 
     @tool(annotations={"readOnlyHint": True})
