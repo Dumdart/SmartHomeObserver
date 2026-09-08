@@ -1,4 +1,5 @@
 from pathlib import Path
+from topicgate.app.services.topic_history_service import TopicHistoryService
 from topicgate.app.services.history_retention_service import HistoryRetentionService
 from topicgate.infrastructure.repository.history_retention_repository import HistoryRetentionRepository
 from topicgate.app.services.history_recording_service import HistoryRecordingService
@@ -120,6 +121,9 @@ class AppDependencies:
             self.topic_messages, self.topic_messages.record_canonical_message,
             self.history_recording,
         )
+        self.topic_history = TopicHistoryService(
+            self.history_repository, self.history_retention, self.history_recording.status,
+        )
         self.control_operations = ControlOperationService(
             self._db_context,
             control_owner,
@@ -225,6 +229,7 @@ class AppDependencies:
             control_operations=self.control_operations,
             history_recording=self.history_recording,
             history_retention=self.history_retention,
+            topic_history=self.topic_history,
         )
         self.broker_resolver = BrokerResolver(self.runtime)
         self.health_wait_service = BrokerHealthWaitService(

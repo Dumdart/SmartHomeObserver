@@ -1,10 +1,12 @@
 from base64 import b64encode
+from datetime import datetime
 from uuid import UUID
 
 from fastmcp import FastMCP
 from fastmcp.tools import tool
 
 from topicgate.app.services.broker_resolver import BrokerResolver
+from topicgate.app.models.topic_history import TopicHistoryResult
 from topicgate.app.topicgate_runtime import TopicGateRuntime
 from topicgate.core.models.mqtt_observation import MqttObservation
 from topicgate.mcp.api.mcp_api import MCPApi
@@ -23,6 +25,31 @@ class TopicAPI(MCPApi):
     def register(self, mcp: FastMCP, *, control_enabled: bool = False) -> None:
         mcp.add_tool(self.list_topics)
         mcp.add_tool(self.get_topic_state)
+        mcp.add_tool(self.get_topic_history)
+
+    @tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+    def get_topic_history(
+        self, broker: UUID | str, topic_filter: str,
+        after: datetime | None = None, before: datetime | None = None,
+        cursor: str | None = None, limit: int = 100,
+    ) -> TopicHistoryResult:
+        """Read a bounded page of TopicGate-observed event history.
+
+        Side effects: None; does not connect, activate, flush, or enable recording.
+        Required state: A saved broker; recording is opt-in. Existing retained
+        events remain readable while disconnected or recording is disabled.
+        Identifiers: broker accepts UUID or unique name; topic_filter uses MQTT
+        wildcards. after/before are exclusive timezone-aware receive-time bounds.
+        Failures: Unknown/ambiguous broker, invalid filter/time/limit, malformed
+        or mismatched cursor, and storage read errors. limit is 1–500.
+        Follow next_cursor even after an empty page. Refresh without a cursor
+        starts a new committed snapshot. Inspect limitations, recording counters,
+        retention, and truncation; this is not authoritative broker history.
+        """
+        resolved = self._resolver.resolve(broker)
+        return self._runtime.get_topic_history(
+            resolved.id, topic_filter, after=after, before=before, cursor=cursor, limit=limit,
+        )
 
     @tool(
         annotations={"readOnlyHint": True, "openWorldHint": True},

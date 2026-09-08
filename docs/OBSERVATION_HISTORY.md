@@ -47,3 +47,27 @@ remain. Idle checks default to 60 seconds and are adjustable. Enforcement is
 eventual: usage may temporarily exceed limits between batches. Settings report
 broker usage and global eviction totals, last prune, and pending enforcement.
 Turning recording off does not stop retention enforcement or erase saved events.
+
+## Read-only MCP history
+
+`get_topic_history(broker, topic_filter, after=None, before=None, cursor=None,
+limit=100)` accepts a broker UUID or unique name and MQTT wildcards. `#` and `+`
+do not match leading `$` system topics unless the filter explicitly starts with
+`$`. Time bounds must include a timezone, are normalized to UTC, and are exclusive.
+
+Results are oldest first by `(received_at, observation_id)`. The first page freezes
+the committed insertion boundary; later arrivals, even with older or equal receipt
+times, appear only after a fresh query without a cursor. Cursors are versioned,
+opaque continuation tokens scoped to broker/filter/time bounds. Do not edit them.
+Retention may delete snapshot events between pages; limitations flag that change.
+
+Pages contain at most 500 records (default 100), with at most 16 KiB of each stored
+payload rendered and 256 KiB of JSON-encoded payload fields across the page.
+Responses include original/stored/rendered sizes and both truncation flags.
+Binary payloads use base64 and have no UTF-8 text field. A bounded scan may return
+an empty page with `next_cursor`; continue until the cursor is null. Pending
+writes are excluded, and queries never flush, connect, enable recording, or prune.
+
+Always inspect `recording`, `retention`, `usage`, and `limitations`. Retention's
+oldest available receive time is a storage horizon, not proof of uninterrupted
+coverage. Settings summaries and eviction generations apply globally where labeled.

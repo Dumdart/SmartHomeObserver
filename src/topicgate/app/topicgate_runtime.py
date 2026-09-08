@@ -5,6 +5,8 @@ from datetime import datetime
 from uuid import UUID
 
 from topicgate.app.services.service_item import ServiceItem
+from topicgate.app.services.topic_history_service import TopicHistoryService
+from topicgate.app.models.topic_history import TopicHistoryResult
 from topicgate.app.services.history_retention_service import HistoryRetentionService
 from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
 from topicgate.app.services.history_recording_service import HistoryRecordingService
@@ -57,6 +59,7 @@ class TopicGateRuntime(ServiceItem):
         current_topics: CurrentTopicReader | None = None,
         history_recording: HistoryRecordingService | None = None,
         history_retention: HistoryRetentionService | None = None,
+        topic_history: TopicHistoryService | None = None,
     ) -> None:
         self._brokers = broker_repository
         self._active_broker_id = (
@@ -72,6 +75,7 @@ class TopicGateRuntime(ServiceItem):
         self._control_operations = control_operations
         self._history_recording = history_recording
         self._history_retention = history_retention
+        self._topic_history = topic_history
         if self._active_broker_id not in self._mqtt_repositories:
             raise ValueError("The active broker requires an MQTT repository.")
 
@@ -172,6 +176,16 @@ class TopicGateRuntime(ServiceItem):
         if self._history_retention is None:
             raise RuntimeError("History retention is unavailable.")
         return self._history_retention.get_policy()
+
+    def get_topic_history(
+        self, broker_id: UUID, topic_filter: str, *, after: datetime | None = None,
+        before: datetime | None = None, cursor: str | None = None, limit: int = 100,
+    ) -> TopicHistoryResult:
+        self._get_broker_profile(broker_id)
+        if self._topic_history is None:
+            raise RuntimeError("Topic history is unavailable.")
+        return self._topic_history.query(broker_id, topic_filter, after=after,
+                                        before=before, cursor=cursor, limit=limit)
 
     def update_history_retention_policy(self, policy: HistoryRetentionPolicy) -> None:
         with self.control_operation("configure history retention"):
