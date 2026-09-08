@@ -5,6 +5,8 @@ from datetime import datetime
 from uuid import UUID
 
 from topicgate.app.services.service_item import ServiceItem
+from topicgate.app.services.history_recording_service import HistoryRecordingService
+from topicgate.core.models.history_recording import HistoryRecordingStatus
 from topicgate.app.services.observation_cache_service import ObservationCacheService
 from topicgate.app.services.observation_query_service import ObservationQueryService
 from topicgate.app.services.control_operation_service import ControlOperationService
@@ -51,6 +53,7 @@ class TopicGateRuntime(ServiceItem):
         control_operations: ControlOperationService | None = None,
         observation_query: ObservationQueryService | None = None,
         current_topics: CurrentTopicReader | None = None,
+        history_recording: HistoryRecordingService | None = None,
     ) -> None:
         self._brokers = broker_repository
         self._active_broker_id = (
@@ -64,6 +67,7 @@ class TopicGateRuntime(ServiceItem):
         self._observation_query = observation_query
         self._current_topics = current_topics
         self._control_operations = control_operations
+        self._history_recording = history_recording
         if self._active_broker_id not in self._mqtt_repositories:
             raise ValueError("The active broker requires an MQTT repository.")
 
@@ -153,6 +157,19 @@ class TopicGateRuntime(ServiceItem):
 
     def get_retention_policy(self) -> ObservationRetentionPolicy:
         return self._require_observation_cache().get_retention_policy()
+
+    def get_history_recording_status(self, broker_id: UUID) -> HistoryRecordingStatus:
+        self._get_broker_profile(broker_id)
+        if self._history_recording is None:
+            return HistoryRecordingStatus(broker_id)
+        return self._history_recording.status(broker_id)
+
+    def set_history_recording(self, broker_id: UUID, enabled: bool) -> None:
+        self._get_broker_profile(broker_id)
+        with self.control_operation("configure history recording"):
+            if self._history_recording is None:
+                raise RuntimeError("History recording is unavailable.")
+            self._history_recording.set_enabled(broker_id, enabled)
 
     def update_retention_policy(
         self,
@@ -389,7 +406,12 @@ class TopicGateRuntime(ServiceItem):
                 await self.activate_broker(replacement.id)
             if self._observation_cache is not None:
                 self._observation_cache.flush_pending_writes()
+            if self._history_recording is not None:
+                await self._mqtt_repositories[profile.id].stop()
+                self._history_recording.quiesce_broker(profile.id)
             deleted = self._brokers.delete_profile(profile.id)
+            if self._history_recording is not None:
+                self._history_recording.forget_broker(profile.id)
             self._mqtt_repositories.pop(profile.id)
             return self._broker_summary(deleted)
 

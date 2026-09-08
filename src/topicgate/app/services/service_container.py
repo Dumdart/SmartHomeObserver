@@ -15,6 +15,12 @@ class ServiceContainer:
             self._started_items.append(service_item)
 
     async def stop_services(self) -> None:
+        errors: list[Exception] = []
         while self._started_items:
             service_item = self._started_items.pop()
-            await service_item.stop()
+            try:
+                await service_item.stop()
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise ExceptionGroup("Application shutdown was incomplete.", errors)

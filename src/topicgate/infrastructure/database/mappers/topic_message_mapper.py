@@ -20,6 +20,7 @@ class TopicMessageMapper:
             payload_size=row.payload_size,
             message_count=row.message_count,
             observation_id=row.observation_id,
+            is_truncated=len(row.payload) < row.payload_size,
         )
 
     @staticmethod

@@ -1,4 +1,8 @@
 from pathlib import Path
+from topicgate.app.services.history_recording_service import HistoryRecordingService
+from topicgate.app.services.observation_recorder import ObservationRecorder
+from topicgate.infrastructure.repository.history_recording_repository import HistoryRecordingRepository
+from topicgate.infrastructure.repository.observation_history_repository import ObservationHistoryRepository
 
 from topicgate.app.services.broker_health_monitor import BrokerHealthMonitor
 from topicgate.app.services.broker_health_wait_service import BrokerHealthWaitService
@@ -103,6 +107,15 @@ class AppDependencies:
             administrator=self.topic_messages,
         )
         self.observation_query = ObservationQueryService(self.topic_messages)
+        self.history_repository = ObservationHistoryRepository(self._db_context)
+        self.history_recording_repository = HistoryRecordingRepository(self._db_context)
+        self.history_recording = HistoryRecordingService(
+            self.history_repository, self.history_recording_repository,
+        )
+        self.observation_recorder = ObservationRecorder(
+            self.topic_messages, self.topic_messages.record_canonical_message,
+            self.history_recording,
+        )
         self.control_operations = ControlOperationService(
             self._db_context,
             control_owner,
@@ -110,6 +123,7 @@ class AppDependencies:
         self.persistence = PersistenceLifecycle(
             self.topic_messages,
             self._db_context,
+            self.history_recording,
         )
         self.broker_profiles = BrokerProfileService(
             self._db_context,
@@ -205,6 +219,7 @@ class AppDependencies:
             observation_query=self.observation_query,
             current_topics=self.topic_messages,
             control_operations=self.control_operations,
+            history_recording=self.history_recording,
         )
         self.broker_resolver = BrokerResolver(self.runtime)
         self.health_wait_service = BrokerHealthWaitService(
@@ -262,4 +277,5 @@ class AppDependencies:
             message_recorder=self.topic_messages,
             current_topics=self.topic_messages,
             health_sink=self.health_sink,
+            accepted_recorder=self.observation_recorder,
         )

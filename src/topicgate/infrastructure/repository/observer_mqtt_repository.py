@@ -3,8 +3,9 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
+from topicgate.app.services.observation_recorder import ObservationRecorder
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.interfaces.current_topic_reader import CurrentTopicReader
 from topicgate.core.interfaces.health_observation_sink import HealthObservationSink
@@ -20,7 +21,6 @@ from topicgate.core.models.observation_retention_policy import (
 )
 from topicgate.core.models.observation_status import ObservationStatus
 from topicgate.core.models.subscription import Subscription
-from topicgate.core.models.topic_message import TopicMessage
 from topicgate.core.mqtt_topics import mqtt_filter_matches, validate_topic_name
 from topicgate.core.observer_limits import TOPIC_TREE_REFRESH_INTERVAL_SECONDS
 from topicgate.core.payload_limits import MAX_PENDING_MESSAGE_NOTIFICATIONS
@@ -29,9 +29,6 @@ from topicgate.infrastructure.mqtt.callbacks.observer_repository_callbacks impor
 )
 from topicgate.infrastructure.mqtt.mqtt_gate import MqttGate
 from topicgate.processors.subscription_manager import SubscriptionManager
-from topicgate.processors.observation_retention_processor import (
-    ObservationRetentionProcessor,
-)
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +51,7 @@ class ObserverMqttRepository:
         message_recorder: TopicMessageRecorder,
         current_topics: CurrentTopicReader,
         health_sink: HealthObservationSink,
+        accepted_recorder: ObservationRecorder | None = None,
     ) -> None:
         self._retention_policy = retention_policy or ObservationRetentionPolicy
         self._observation_sink = observation_sink
@@ -61,6 +59,9 @@ class ObserverMqttRepository:
         self._broker_id = broker_id
         self._message_recorder = message_recorder
         self._current_topics = current_topics
+        self._accepted_recorder = accepted_recorder or ObservationRecorder(
+            current_topics, message_recorder.record_message,
+        )
         self.health_sink = health_sink
         self.message_queue: asyncio.Queue[MqttMessage] = asyncio.Queue(
             maxsize=MAX_PENDING_MESSAGE_NOTIFICATIONS
@@ -180,30 +181,10 @@ class ObserverMqttRepository:
 
     def handle_message(self, _client: Any, _userdata: Any, msg: MqttMessage) -> None:
         validate_topic_name(msg.topic)
-        msg, is_truncated = ObservationRetentionProcessor.truncate_mqtt_message(
-            msg,
-            self._retention_policy(),
-        )
-        previous = self._current_topics.get_current_topic(
-            self._broker_id,
-            msg.topic,
-        )
-        entry = TopicMessage(
-            broker_id=self._broker_id,
-            topic=msg.topic,
-            payload=msg.payload,
-            qos=msg.qos,
-            retain=msg.retain,
-            received_at=self._clock(),
-            payload_size=msg.payload_size,
-            message_count=(
-                1 if previous is None else previous.message.message_count + 1
-            ),
-            observation_id=uuid4(),
-            is_truncated=is_truncated
-        )
         try:
-            self._message_recorder.record_message(entry)
+            entry, msg = self._accepted_recorder.record(
+                self._broker_id, msg, self._retention_policy(), self._clock,
+            )
         except Exception:
             self._recording_failure_count += 1
             raise
