@@ -1,4 +1,7 @@
 from topicgate.infrastructure.database.models.app_config_row import AppConfigRow
+from topicgate.infrastructure.database.models.history_retention_row import (
+    HistoryRetentionPolicyRow, HistoryRetentionStateRow,
+)
 from topicgate.infrastructure.database.models.history_recording_row import (
     HistoryRecordingSessionRow, HistoryRecordingSettingRow,
 )
@@ -31,6 +34,8 @@ from topicgate.infrastructure.database.models.subscription_row import (
 )
 
 __all__ = [
+    "HistoryRetentionPolicyRow",
+    "HistoryRetentionStateRow",
     "HistoryRecordingSessionRow",
     "HistoryRecordingSettingRow",
     "ObservationEventRow",

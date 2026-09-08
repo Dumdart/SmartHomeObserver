@@ -26,3 +26,24 @@ potentially incomplete history, not an exact count of events lost in a crash.
 Shutdown gives history ten seconds to drain and reports failures or timeout.
 Exactly-once delivery across crashes is not guaranteed. Pending history is drained
 before broker deletion; a drain timeout aborts deletion.
+
+## Opt-in and independent retention
+
+Open **Stored observations → History settings**, select a broker, check
+**Record new events for this broker (opt-in)** and apply. The shared history
+limits start at seven days, 100,000 events per broker, no per-topic cap, and
+256 MiB of stored payloads globally. Age and per-topic caps can be left blank.
+Large history retention limits may slow startup and history queries.
+
+The size budget counts stored payload bytes, not database file bytes, indexes,
+or filesystem allocation. Zero-byte events still count toward event limits.
+Policy changes validate before persistence. Pruning applies age, per-topic count,
+per-broker count, then the global byte budget, always oldest first with UUIDs
+breaking timestamp ties. Each eviction is attributed to its first applicable limit.
+
+Pruning removes at most 500 events per transaction (adjustable downward), releases
+locks between batches, and resumes at most once per second when more work may
+remain. Idle checks default to 60 seconds and are adjustable. Enforcement is
+eventual: usage may temporarily exceed limits between batches. Settings report
+broker usage and global eviction totals, last prune, and pending enforcement.
+Turning recording off does not stop retention enforcement or erase saved events.

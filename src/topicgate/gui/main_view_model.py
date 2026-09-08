@@ -94,10 +94,15 @@ from topicgate.presentation.health_presentation import (
 from topicgate.processors.condition_factory import ConditionFactory
 
 
+from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
+from topicgate.core.models.history_recording import HistoryRecordingStatus
+
+
 class MainViewModel(QObject):
     """Presentation state for the observer workspace."""
 
     state_changed = Signal()
+    history_settings_changed = Signal()
     topics_changed = Signal()
     subscriptions_changed = Signal()
     connection_changed = Signal()
@@ -124,6 +129,12 @@ class MainViewModel(QObject):
     ) -> None:
         super().__init__()
         self._runtime = runtime
+        self.history_policy: HistoryRetentionPolicy | None = None
+        self.history_recording_status: HistoryRecordingStatus | None = None
+        self.history_usage: HistoryUsage | None = None
+        self.history_settings_broker: UUID | None = None
+        self.history_settings_error: str | None = None
+        self._history_settings_generation = 0
         self._snapshot_service = snapshot_service or BrokerSnapshotService(runtime)
         self._mcp_setup_service = mcp_setup_service
         self._health_query_service = health_query_service
@@ -864,6 +875,45 @@ class MainViewModel(QObject):
 
     def reset_snapshot_query(self) -> None:
         self.apply_snapshot_query(SnapshotQuery())
+
+    async def load_history_settings(self, broker_id: UUID) -> None:
+        self._history_settings_generation += 1
+        generation = self._history_settings_generation
+        try:
+            policy, status, usage = await asyncio.gather(
+                asyncio.to_thread(self._runtime.get_history_retention_policy),
+                asyncio.to_thread(self._runtime.get_history_recording_status, broker_id),
+                asyncio.to_thread(self._runtime.get_history_usage, broker_id),
+            )
+        except Exception:
+            if generation == self._history_settings_generation:
+                self.history_settings_broker = broker_id
+                self.history_settings_error = "History settings could not be loaded. Reload to retry."
+                self.history_policy = None
+                self.history_settings_changed.emit()
+            return
+        if generation != self._history_settings_generation:
+            return
+        self.history_settings_broker = broker_id
+        self.history_policy, self.history_recording_status, self.history_usage = policy, status, usage
+        self.history_settings_error = None
+        self.history_settings_changed.emit()
+
+    async def save_history_settings(
+        self, broker_id: UUID, enabled: bool, policy: HistoryRetentionPolicy,
+    ) -> None:
+        async with self._operation("history-settings"):
+            try:
+                await asyncio.to_thread(self._runtime.update_history_retention_policy, policy)
+                await asyncio.to_thread(self._runtime.set_history_recording, broker_id, enabled)
+            except Exception:
+                await self.load_history_settings(broker_id)
+                self.history_settings_error = (
+                    "History settings could not be fully applied. Current saved values were reloaded."
+                )
+                self.history_settings_changed.emit()
+                return
+            await self.load_history_settings(broker_id)
 
     async def load_stored_observations(
         self,

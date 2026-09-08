@@ -5,6 +5,8 @@ from datetime import datetime
 from uuid import UUID
 
 from topicgate.app.services.service_item import ServiceItem
+from topicgate.app.services.history_retention_service import HistoryRetentionService
+from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
 from topicgate.app.services.history_recording_service import HistoryRecordingService
 from topicgate.core.models.history_recording import HistoryRecordingStatus
 from topicgate.app.services.observation_cache_service import ObservationCacheService
@@ -54,6 +56,7 @@ class TopicGateRuntime(ServiceItem):
         observation_query: ObservationQueryService | None = None,
         current_topics: CurrentTopicReader | None = None,
         history_recording: HistoryRecordingService | None = None,
+        history_retention: HistoryRetentionService | None = None,
     ) -> None:
         self._brokers = broker_repository
         self._active_broker_id = (
@@ -68,6 +71,7 @@ class TopicGateRuntime(ServiceItem):
         self._current_topics = current_topics
         self._control_operations = control_operations
         self._history_recording = history_recording
+        self._history_retention = history_retention
         if self._active_broker_id not in self._mqtt_repositories:
             raise ValueError("The active broker requires an MQTT repository.")
 
@@ -163,6 +167,24 @@ class TopicGateRuntime(ServiceItem):
         if self._history_recording is None:
             return HistoryRecordingStatus(broker_id)
         return self._history_recording.status(broker_id)
+
+    def get_history_retention_policy(self) -> HistoryRetentionPolicy:
+        if self._history_retention is None:
+            raise RuntimeError("History retention is unavailable.")
+        return self._history_retention.get_policy()
+
+    def update_history_retention_policy(self, policy: HistoryRetentionPolicy) -> None:
+        with self.control_operation("configure history retention"):
+            if self._history_retention is None:
+                raise RuntimeError("History retention is unavailable.")
+            self._history_retention.update_policy(policy)
+
+    def get_history_usage(self, broker_id: UUID | None = None) -> HistoryUsage:
+        if broker_id is not None:
+            self._get_broker_profile(broker_id)
+        if self._history_retention is None:
+            raise RuntimeError("History retention is unavailable.")
+        return self._history_retention.usage(broker_id)
 
     def set_history_recording(self, broker_id: UUID, enabled: bool) -> None:
         self._get_broker_profile(broker_id)

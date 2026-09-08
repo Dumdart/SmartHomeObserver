@@ -61,6 +61,9 @@ class _QuantityEditor(QWidget):
         self.unit.currentIndexChanged.connect(lambda _index: self.changed.emit())
 
 
+from topicgate.gui.components.history_settings_widget import HistorySettingsWidget
+
+
 class StoredObservationsDialog(QDialog):
     """Application-wide retention policy and persisted cache administration."""
 
@@ -86,6 +89,8 @@ class StoredObservationsDialog(QDialog):
         self.tabs.addTab(self._history_page(), "Observation history")
         self.tabs.addTab(self._retention_page(), "Retention policy")
         self.tabs.addTab(self._cache_page(), "Cache administration")
+        self.history_settings = HistorySettingsWidget(view_model)
+        self.tabs.addTab(self.history_settings, "History settings")
         layout.addWidget(self.tabs)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)

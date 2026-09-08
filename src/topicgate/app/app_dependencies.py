@@ -1,4 +1,6 @@
 from pathlib import Path
+from topicgate.app.services.history_retention_service import HistoryRetentionService
+from topicgate.infrastructure.repository.history_retention_repository import HistoryRetentionRepository
 from topicgate.app.services.history_recording_service import HistoryRecordingService
 from topicgate.app.services.observation_recorder import ObservationRecorder
 from topicgate.infrastructure.repository.history_recording_repository import HistoryRecordingRepository
@@ -108,6 +110,8 @@ class AppDependencies:
         )
         self.observation_query = ObservationQueryService(self.topic_messages)
         self.history_repository = ObservationHistoryRepository(self._db_context)
+        self.history_retention_repository = HistoryRetentionRepository(self._db_context)
+        self.history_retention = HistoryRetentionService(self.history_retention_repository)
         self.history_recording_repository = HistoryRecordingRepository(self._db_context)
         self.history_recording = HistoryRecordingService(
             self.history_repository, self.history_recording_repository,
@@ -220,6 +224,7 @@ class AppDependencies:
             current_topics=self.topic_messages,
             control_operations=self.control_operations,
             history_recording=self.history_recording,
+            history_retention=self.history_retention,
         )
         self.broker_resolver = BrokerResolver(self.runtime)
         self.health_wait_service = BrokerHealthWaitService(
@@ -261,6 +266,7 @@ class AppDependencies:
 
         self.service_items: tuple[ServiceItem, ...] = (
             self.persistence,
+            self.history_retention,
             self.health_monitor,
             self.runtime,
         )

@@ -751,6 +751,14 @@ class MainWindow(QMainWindow):
         if dialog is None:
             dialog = StoredObservationsDialog(self._view_model, self)
             dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            dialog.history_settings.load_requested.connect(
+                lambda broker_id: self._run_async(self._view_model.load_history_settings(broker_id))
+            )
+            dialog.history_settings.save_requested.connect(
+                lambda broker_id, enabled, policy: self._run_async(
+                    self._view_model.save_history_settings(broker_id, enabled, policy)
+                )
+            )
             dialog.destroyed.connect(
                 lambda: setattr(self, "_stored_observations_dialog", None)
             )
@@ -802,6 +810,7 @@ class MainWindow(QMainWindow):
         dialog.raise_()
         dialog.activateWindow()
         self._run_async(self._view_model.load_stored_observations())
+        self._run_async(self._view_model.load_history_settings(dialog.history_settings.broker.currentData()))
 
     async def _preview_and_save_retention_policy(self, policy) -> None:
         preview = await self._view_model.preview_retention_policy(policy)

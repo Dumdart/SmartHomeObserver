@@ -464,6 +464,35 @@ def test_about_dialog_describes_persisted_observations() -> None:
     application.processEvents()
 
 
+def test_history_settings_are_opt_in_and_validate_limits() -> None:
+    from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
+    from topicgate.core.models.history_recording import HistoryRecordingStatus
+
+    application = QApplication.instance() or QApplication([])
+    view_model = MainViewModel(runtime_for(FakeGuiRepository()))
+    dialog = StoredObservationsDialog(view_model)
+    settings = dialog.history_settings
+    broker = settings.broker.currentData()
+    view_model.history_settings_broker = broker
+    view_model.history_policy = HistoryRetentionPolicy()
+    view_model.history_recording_status = HistoryRecordingStatus(broker)
+    view_model.history_usage = HistoryUsage(broker, 0, 0, None, None, 0)
+    settings.render()
+    assert not settings.enabled.isChecked()
+    assert settings.save.isEnabled()
+    assert "slow startup and history queries" in settings.findChild(QLabel, "historyRetentionWarning").text()
+    settings.fields["prune_batch_size"].setText("501")
+    assert not settings.save.isEnabled()
+    assert "500" in settings.error.text()
+    settings.fields["prune_batch_size"].setText("50")
+    assert settings.draft_policy().prune_batch_size == 50
+    assert settings.draft_policy().max_events_per_topic is None
+    settings.broker.setCurrentIndex(1)
+    assert not settings.save.isEnabled()
+    dialog.deleteLater()
+    application.processEvents()
+
+
 def test_stored_observations_dialog_renders_policy_and_inline_validation() -> None:
     application = QApplication.instance() or QApplication([])
     view_model = MainViewModel(runtime_for(FakeGuiRepository()))
