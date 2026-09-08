@@ -26,7 +26,9 @@ from topicgate.app.models.broker_snapshot import (
 from topicgate.app.models.expectation_health_report import (
     ExpectationHealthFinding,
     ExpectationHealthReport,
+    FindingCheckpoint,
 )
+from topicgate.app.services.finding_delta_service import finding_fingerprint
 from topicgate.app.services.support_bundle_export_service import (
     SupportBundleExporter,
 )
@@ -34,7 +36,7 @@ from topicgate.app.services.support_bundle_service import SupportBundleService
 from topicgate.core.config.mqtt_config import MqttConfig
 from topicgate.core.models.broker_profile_summary import BrokerProfileSummary
 from topicgate.core.models.broker_summary import BrokerSummary
-from topicgate.core.models.health import HealthStatus
+from topicgate.core.models.health import HealthSeverity, HealthStatus, default_profile_id
 from topicgate.core.models.mqtt_observation import ObservationSource
 from topicgate.core.models.subscription import Subscription
 from topicgate.core.models.support_bundle import (
@@ -501,8 +503,21 @@ def _snapshot() -> BrokerSnapshot:
 
 
 def _health_report() -> ExpectationHealthReport:
+    expectation_id = UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+    profile_id = default_profile_id(BROKER_ID)
+    rule_id = f"legacy-{expectation_id}"
     finding = ExpectationHealthFinding(
-        expectation_id=UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+        expectation_id=expectation_id,
+        profile_id=profile_id,
+        rule_id=rule_id,
+        severity=HealthSeverity.CRITICAL,
+        matched_topic=REAL_TOPIC,
+        fingerprint=finding_fingerprint(
+            profile_id=profile_id,
+            rule_id=rule_id,
+            broker_id=BROKER_ID,
+            matched_topic=REAL_TOPIC,
+        ),
         expectation_revision=1,
         name=f"Check {REAL_TOPIC}",
         description=SECRET_PASSWORD,
@@ -525,4 +540,6 @@ def _health_report() -> ExpectationHealthReport:
         active_failure_count=1,
         returned_count=1,
         omitted_count=0,
+        checkpoint=FindingCheckpoint(1, BROKER_ID, (), True, 0),
+        delta=None,
     )
