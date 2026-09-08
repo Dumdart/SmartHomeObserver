@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -22,7 +22,8 @@ class HistoryRetentionService(ServiceItem):
         self._store.set_policy(HistoryRetentionPolicy(**asdict(policy)))
 
     def usage(self, broker_id: UUID | None = None) -> HistoryUsage:
-        return self._store.usage(broker_id)
+        usage = self._store.usage(broker_id)
+        return replace(usage, enforcement_pending=True) if self.last_error else usage
 
     async def start(self) -> None:
         if self._task is None:

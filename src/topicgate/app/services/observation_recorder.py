@@ -35,7 +35,8 @@ class ObservationRecorder:
                 qos=message.qos, retain=message.retain, received_at=clock(),
                 payload_size=message.payload_size,
                 message_count=1 if previous is None else previous.message.message_count + 1,
-                observation_id=uuid4(), is_truncated=truncated,
+                observation_id=uuid4(),
+                is_truncated=truncated or message.payload_size > len(message.payload),
             )
             self._record_current(entry)
             if self._history is not None:

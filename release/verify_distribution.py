@@ -41,6 +41,10 @@ with engine.connect() as connection:
 assert installed_revision == expected_revision
 assert "observation_event" in inspect(engine).get_table_names()
 assert "observation_history_clock" in inspect(engine).get_table_names()
+assert {"history_recording_setting", "history_recording_session",
+        "history_retention_policy", "history_retention_state"}.issubset(
+    inspect(engine).get_table_names()
+)
 print(f"Verified installed TopicGate wheel at {package_dir}")
 print(f"Verified fresh database migration {installed_revision}")
 """

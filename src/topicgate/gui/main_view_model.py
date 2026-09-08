@@ -11,6 +11,9 @@ from uuid import UUID, uuid4
 from PySide6.QtCore import QObject, Signal
 
 from topicgate.app.models.broker_snapshot import BrokerSnapshot
+from topicgate.app.models.topic_history import TopicHistoryResult
+from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
+from topicgate.core.models.history_recording import HistoryRecordingStatus
 from topicgate.app.models.expectation_health_report import (
     ExpectationHealthReport,
     FailureHistoryResult,
@@ -92,11 +95,6 @@ from topicgate.presentation.health_presentation import (
     topic_health_summary,
 )
 from topicgate.processors.condition_factory import ConditionFactory
-
-
-from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
-from topicgate.app.models.topic_history import TopicHistoryResult
-from topicgate.core.models.history_recording import HistoryRecordingStatus
 
 
 class MainViewModel(QObject):

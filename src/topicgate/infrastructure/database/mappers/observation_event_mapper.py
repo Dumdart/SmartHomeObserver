@@ -8,7 +8,11 @@ from topicgate.infrastructure.database.models.observation_event_row import Obser
 class ObservationEventMapper:
     @staticmethod
     def to_row(event: ObservationEvent, sequence: int) -> ObservationEventRow:
-        return ObservationEventRow(**asdict(event), sequence=sequence)
+        if event.received_at.tzinfo is None or event.received_at.utcoffset() is None:
+            raise ValueError("Observation receipt time must include a timezone.")
+        values = asdict(event)
+        values["received_at"] = event.received_at.astimezone(timezone.utc)
+        return ObservationEventRow(**values, sequence=sequence)
 
     @staticmethod
     def to_dto(row: ObservationEventRow) -> ObservationEvent:

@@ -149,5 +149,5 @@ def _decode_cursor(cursor: str, scope: str) -> tuple[tuple[datetime, UUID], int,
         timestamp = _utc(datetime.fromisoformat(value["p"][0]))
         event_id = UUID(value["p"][1])
         return (timestamp, event_id), value["w"], value["g"]
-    except (ValueError, TypeError, KeyError, AttributeError, UnicodeError) as error:
+    except (ValueError, TypeError, KeyError, AttributeError, UnicodeError, RecursionError) as error:
         raise ValueError("Invalid, unsupported, or differently scoped history cursor.") from error

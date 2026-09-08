@@ -101,3 +101,37 @@ def test_empty_payloads_are_count_bounded(history_store):
     retention.set_policy(HistoryRetentionPolicy(max_age_seconds=None, max_events_per_broker=1))
     store.append(tuple(event(broker, n, payload=b"", payload_size=0) for n in range(1, 4)))
     assert retention.prune(event(broker).received_at).by_reason == {"broker_count": 2}
+
+
+def test_large_age_limit_does_not_overflow_datetime(history_store):
+    db, store, broker = history_store
+    retention = HistoryRetentionRepository(db)
+    retention.set_policy(HistoryRetentionPolicy(max_age_seconds=2**63 - 1))
+    store.append((event(broker),))
+    assert retention.prune(event(broker).received_at).deleted == 0
+    with pytest.raises(ValueError):
+        HistoryRetentionPolicy(max_payload_bytes=2**63)
+
+
+async def test_pruning_failure_is_visible_and_service_stops_without_disposal_race():
+    import asyncio
+    from threading import Event
+    from unittest.mock import Mock
+    from topicgate.app.services.history_retention_service import HistoryRetentionService
+    from topicgate.core.models.history_retention import HistoryUsage
+
+    attempted = Event()
+
+    def fail(_now):
+        attempted.set()
+        raise RuntimeError("synthetic failure")
+
+    store = Mock()
+    store.prune.side_effect = fail
+    store.usage.return_value = HistoryUsage(None, 0, 0, None, None, 0)
+    service = HistoryRetentionService(store)
+    await service.start()
+    assert await asyncio.to_thread(attempted.wait, 2)
+    await service.stop()
+    assert service.last_error == "History pruning failed; retention enforcement is pending."
+    assert service.usage().enforcement_pending

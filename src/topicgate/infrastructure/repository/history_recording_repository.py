@@ -62,6 +62,6 @@ class HistoryRecordingRepository:
         admitted, committed, dropped, failed = totals
         return HistoryRecordingStatus(
             broker_id, bool(enabled), admitted, committed,
-            max(0, admitted - committed - failed), dropped, failed,
+            0, dropped, failed,
             previous_unclean=bool(unclosed),
         )

@@ -73,8 +73,12 @@ class HistoryRetentionRepository:
                     remaining -= len(ids)
 
             if policy.max_age_seconds is not None:
+                minimum = datetime.min.replace(tzinfo=timezone.utc)
+                seconds_since_minimum = (now - minimum).total_seconds()
+                cutoff = (minimum if policy.max_age_seconds >= seconds_since_minimum
+                          else now - timedelta(seconds=policy.max_age_seconds))
                 remove(select(row.observation_id).where(
-                    row.received_at < now - timedelta(seconds=policy.max_age_seconds)), "age")
+                    row.received_at < cutoff), "age")
             for partition, maximum, reason in (
                 ([row.broker_id, row.topic], policy.max_events_per_topic, "topic_count"),
                 ([row.broker_id], policy.max_events_per_broker, "broker_count"),

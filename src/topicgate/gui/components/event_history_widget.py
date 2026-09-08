@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import timezone
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
@@ -7,11 +10,14 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+if TYPE_CHECKING:
+    from topicgate.gui.main_view_model import MainViewModel
+
 
 class EventHistoryWidget(QWidget):
     query_requested = Signal(object, str, object, object, object, int)
 
-    def __init__(self, view_model, parent=None) -> None:
+    def __init__(self, view_model: MainViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._view_model = view_model
         layout = QVBoxLayout(self)
@@ -88,7 +94,7 @@ class EventHistoryWidget(QWidget):
         view_model.event_history_changed.connect(self.render)
 
     @staticmethod
-    def _time_filter(form, title):
+    def _time_filter(form: QFormLayout, title: str) -> tuple[QCheckBox, QDateTimeEdit]:
         enabled = QCheckBox(f"Use {title.lower()} bound")
         editor = QDateTimeEdit(QDateTime.currentDateTimeUtc())
         editor.setDisplayFormat("yyyy-MM-dd HH:mm:ss 'UTC'")

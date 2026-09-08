@@ -87,6 +87,63 @@ def test_writer_failure_is_visible_and_later_writes_continue(history_store):
     assert HistoryRecordingRepository(db).status(broker).failed == 1
 
 
+def test_checkpoint_failure_is_explicit_without_corrupting_event_store(history_store):
+    db, store, broker = history_store
+    settings = HistoryRecordingRepository(db)
+    service = HistoryRecordingService(store, settings)
+    service.set_enabled(broker, True)
+    settings.checkpoint = Mock(side_effect=RuntimeError("synthetic failure"))
+    service.record(event(broker))
+    with pytest.raises(RuntimeError, match="incomplete"):
+        service.close()
+    assert service.status(broker).checkpoint_failed
+    assert len(store.scan(broker).events) == 1
+    persisted = HistoryRecordingRepository(db).status(broker)
+    assert persisted.previous_unclean
+    assert persisted.pending == 0
+
+
+def test_broker_drain_failure_aborts_deletion_and_restores_admission(history_store):
+    from concurrent.futures import ThreadPoolExecutor
+
+    db, store, broker = history_store
+    entered, release = Event(), Event()
+
+    def fail_append(_events):
+        entered.set()
+        assert release.wait(5)
+        raise RuntimeError("synthetic failure")
+
+    writer = Mock(append=fail_append)
+    service = HistoryRecordingService(writer, HistoryRecordingRepository(db))
+    service.set_enabled(broker, True)
+    service.record(event(broker))
+    assert entered.wait(2)
+    original_flush = service.flush
+    draining = Event()
+
+    def signal_flush(*args, **kwargs):
+        draining.set()
+        return original_flush(*args, **kwargs)
+
+    service.flush = signal_flush
+    try:
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(service.quiesce_broker, broker)
+            assert draining.wait(2)
+            release.set()
+            with pytest.raises(RuntimeError, match="deletion was aborted"):
+                future.result(timeout=3)
+        writer.append = store.append
+        service.record(event(broker, 2))
+        service.flush()
+        assert service.status(broker).committed == 1
+    finally:
+        release.set()
+        with pytest.raises(RuntimeError, match="incomplete"):
+            service.close()
+
+
 def test_shutdown_timeout_keeps_writer_alive_until_drain(history_store):
     db, store, broker = history_store
     entered, release = Event(), Event()

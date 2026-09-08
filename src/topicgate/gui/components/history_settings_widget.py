@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdit, QPushButton,
@@ -6,12 +10,15 @@ from PySide6.QtWidgets import (
 
 from topicgate.core.models.history_retention import HistoryRetentionPolicy
 
+if TYPE_CHECKING:
+    from topicgate.gui.main_view_model import MainViewModel
+
 
 class HistorySettingsWidget(QWidget):
     load_requested = Signal(object)
     save_requested = Signal(object, bool, object)
 
-    def __init__(self, view_model, parent=None) -> None:
+    def __init__(self, view_model: MainViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._view_model = view_model
         self._loaded = False

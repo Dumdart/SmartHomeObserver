@@ -18,8 +18,8 @@ class HistoryRetentionPolicy:
             value = getattr(self, name)
             if value is None and name in ("max_age_seconds", "max_events_per_topic"):
                 continue
-            if type(value) is not int or value <= 0:
-                raise ValueError(f"{name} must be a positive integer.")
+            if type(value) is not int or not 0 < value <= 2**63 - 1:
+                raise ValueError(f"{name} must be a positive signed 64-bit integer.")
         if self.prune_batch_size > 500:
             raise ValueError("prune_batch_size cannot exceed 500.")
 

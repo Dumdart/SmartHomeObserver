@@ -17,6 +17,8 @@ class HistoryRecordingService:
         self, writer: ObservationHistoryWriter, store: HistoryRecordingStore,
         *, max_events: int = 1000, max_bytes: int = 16 * 1024 * 1024,
     ) -> None:
+        if any(type(value) is not int or value <= 0 for value in (max_events, max_bytes)):
+            raise ValueError("History queue bounds must be positive integers.")
         self._writer = writer
         self._store = store
         self._max_events = max_events
@@ -111,7 +113,21 @@ class HistoryRecordingService:
     def quiesce_broker(self, broker_id: UUID) -> None:
         with self._condition:
             self._quiesced.add(broker_id)
-        self.flush(broker_id)
+            status = self._statuses.get(broker_id)
+            failed_before = 0 if status is None else status.failed
+        try:
+            self.flush(broker_id)
+            with self._condition:
+                status = self._statuses.get(broker_id)
+                if status is not None and status.failed > failed_before:
+                    raise RuntimeError("History drain was incomplete; broker deletion was aborted.")
+        except Exception:
+            self.resume_broker(broker_id)
+            raise
+
+    def resume_broker(self, broker_id: UUID) -> None:
+        with self._condition:
+            self._quiesced.discard(broker_id)
 
     def forget_broker(self, broker_id: UUID) -> None:
         with self._condition:

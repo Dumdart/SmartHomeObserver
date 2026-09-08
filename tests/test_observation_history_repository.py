@@ -93,3 +93,40 @@ def test_payload_and_provenance_round_trip(history_store):
     store.append((item,))
     assert store.scan(broker).events == (item,)
     assert not store.scan(uuid4()).events
+
+
+def test_non_utc_receipt_is_normalized_before_sqlite_ordering(history_store):
+    from datetime import timedelta
+
+    _, store, broker = history_store
+    first = event(broker, 1, received_at=datetime(2026, 1, 1, 2, tzinfo=timezone(timedelta(hours=2))))
+    second = event(broker, 2)
+    store.append((first, second))
+    page = store.scan(broker)
+    assert [item.observation_id.int for item in page.events] == [1, 2]
+    assert page.events[0].received_at == page.events[1].received_at
+    with pytest.raises(ValueError, match="timezone"):
+        store.append((event(broker, 3, received_at=datetime(2026, 1, 1)),))
+    assert len(store.scan(broker).events) == 2
+
+
+def test_upgrade_does_not_manufacture_events_from_latest_state(history_store):
+    from topicgate.core.models.topic_message import TopicMessage
+    from topicgate.infrastructure.repository.topic_message_repository import TopicMessageRepository
+
+    db, store, broker = history_store
+    item = event(broker)
+    latest = TopicMessageRepository(db)
+    latest.record_message(TopicMessage(broker, item.topic, item.payload, item.qos,
+                                      item.retain, item.received_at, item.payload_size,
+                                      1, item.observation_id))
+    latest.close()
+    with db._engine.begin() as connection:
+        command.downgrade(_alembic_config(connection), "c4d8a7e1f302")
+        command.upgrade(_alembic_config(connection), "head")
+    assert not store.scan(broker).events
+    restored = TopicMessageRepository(db)
+    try:
+        assert restored.get_message(item.observation_id).payload == item.payload
+    finally:
+        restored.close()

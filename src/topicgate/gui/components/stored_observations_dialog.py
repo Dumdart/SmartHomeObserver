@@ -29,6 +29,8 @@ from topicgate.core.models.observation_retention_policy import (
 )
 from topicgate.core.models.message_filter import OrderType
 from topicgate.gui.main_view_model import MainViewModel
+from topicgate.gui.components.history_settings_widget import HistorySettingsWidget
+from topicgate.gui.components.event_history_widget import EventHistoryWidget
 from topicgate.presentation.retention_presentation import (
     AgeUnit,
     ByteUnit,
@@ -59,10 +61,6 @@ class _QuantityEditor(QWidget):
         layout.addWidget(self.unit)
         self.value.textChanged.connect(lambda _text: self.changed.emit())
         self.unit.currentIndexChanged.connect(lambda _index: self.changed.emit())
-
-
-from topicgate.gui.components.history_settings_widget import HistorySettingsWidget
-from topicgate.gui.components.event_history_widget import EventHistoryWidget
 
 
 class StoredObservationsDialog(QDialog):

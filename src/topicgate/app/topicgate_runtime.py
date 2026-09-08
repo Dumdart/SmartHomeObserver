@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import nullcontext
 from dataclasses import replace
@@ -444,8 +445,13 @@ class TopicGateRuntime(ServiceItem):
                 self._observation_cache.flush_pending_writes()
             if self._history_recording is not None:
                 await self._mqtt_repositories[profile.id].stop()
-                self._history_recording.quiesce_broker(profile.id)
-            deleted = self._brokers.delete_profile(profile.id)
+                await asyncio.to_thread(self._history_recording.quiesce_broker, profile.id)
+            try:
+                deleted = self._brokers.delete_profile(profile.id)
+            except Exception:
+                if self._history_recording is not None:
+                    self._history_recording.resume_broker(profile.id)
+                raise
             if self._history_recording is not None:
                 self._history_recording.forget_broker(profile.id)
             self._mqtt_repositories.pop(profile.id)
