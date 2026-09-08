@@ -16,3 +16,7 @@ class DiagnosticPackRegistry:
                 "Diagnostic pack version is not installed: "
                 f"{reference.pack_id}@{reference.version}."
             ) from error
+
+    def list_references(self) -> tuple[PackReference, ...]:
+        """Return installed pack versions in a stable order for selection UIs."""
+        return tuple(sorted(self._packs, key=lambda item: (item.pack_id, item.version)))

@@ -30,6 +30,7 @@ from topicgate.gui.components.connection_controls import ConnectionControls
 from topicgate.gui.components.log_console import LogConsoleDock
 from topicgate.gui.components.expectation_editor import ExpectationEditor
 from topicgate.gui.components.health_inspector import HealthInspector
+from topicgate.gui.components.diagnostic_profile_editor import DiagnosticProfileEditorWindow
 from topicgate.gui.components.mcp_setup_dialog import McpSetupDialog
 from topicgate.gui.components.observer_tree import ObserverTreePane
 from topicgate.gui.components.onboarding_panel import OnboardingPanel
@@ -65,12 +66,16 @@ class MainWindow(QMainWindow):
         self,
         view_model: MainViewModel,
         settings: QSettings | None = None,
+        *,
+        diagnostic_profile_editor=None,
     ) -> None:
         super().__init__()
 
         self.setWindowIcon(QIcon(asset_path("icon.png")))
 
         self._view_model = view_model
+        self._diagnostic_profile_editor = diagnostic_profile_editor
+        self._diagnostic_profile_editor_window = None
         self._operation_tasks: set[asyncio.Task[None]] = set()
         self._accepting_operations = True
         self._settings = settings or QSettings()
@@ -245,6 +250,20 @@ class MainWindow(QMainWindow):
         self._context_panel.setHidden(True)
         self._schedule_health_refresh()
 
+    def _show_diagnostic_profiles(self) -> None:
+        if self._diagnostic_profile_editor is None:
+            return
+        broker_id = self._view_model.active_broker_profile.id
+        if self._diagnostic_profile_editor_window is None:
+            self._diagnostic_profile_editor_window = DiagnosticProfileEditorWindow(
+                self._diagnostic_profile_editor, broker_id, self
+            )
+        else:
+            self._diagnostic_profile_editor_window.set_broker(broker_id)
+        self._diagnostic_profile_editor_window.show()
+        self._diagnostic_profile_editor_window.raise_()
+        self._diagnostic_profile_editor_window.activateWindow()
+
     def _show_topic_expectations(self) -> None:
         self._show_topic_details()
         self._topic_details.set_settings_visible(True)
@@ -368,6 +387,15 @@ class MainWindow(QMainWindow):
         self._health_action.setShortcut("Ctrl+Shift+H")
         self._health_action.triggered.connect(self._show_health)
 
+        self._diagnostic_profiles_action = QAction("Diagnostic profiles...", self)
+        self._diagnostic_profiles_action.setObjectName("diagnosticProfilesAction")
+        self._diagnostic_profiles_action.setEnabled(
+            self._diagnostic_profile_editor is not None
+        )
+        self._diagnostic_profiles_action.triggered.connect(
+            self._show_diagnostic_profiles
+        )
+
         self._quit_action = QAction("Quit", self)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self.close)
@@ -397,6 +425,7 @@ class MainWindow(QMainWindow):
         self.menuBar().addAction(self._stored_observations_action)
         self._view_menu: QMenu = self.menuBar().addMenu("&View")
         self._view_menu.addAction(self._health_action)
+        self._view_menu.addAction(self._diagnostic_profiles_action)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._expand_action)
         self._view_menu.addAction(self._collapse_action)

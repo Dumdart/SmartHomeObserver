@@ -137,7 +137,10 @@ class App:
                 self._dependencies.expectation_management_service
             ),
         )
-        self._window = MainWindow(self._view_model)
+        self._window = MainWindow(
+            self._view_model,
+            diagnostic_profile_editor=self._dependencies.diagnostic_profile_editor,
+        )
 
 
     async def run(self) -> int:

@@ -174,3 +174,23 @@ def test_profile_can_replace_a_pack_rule_with_a_custom_rule_atomically(tmp_path)
         assert rules[0].rule_id == "bridge-online"
     finally:
         database.dispose()
+
+
+def test_prepare_and_pack_catalog_are_side_effect_free(tmp_path):
+    database, service, expectations = _service(tmp_path)
+    try:
+        broker_id = _broker(database, "Broker")
+        assert service.list_pack_references() == (PackReference("zigbee2mqtt", "1.0.0"),)
+        draft = DiagnosticProfile(uuid4(), broker_id, "Draft", custom_rules=(_rule(broker_id),))
+
+        prepared = service.prepare_profile(draft, new_identity=True)
+
+        assert prepared.is_valid
+        assert prepared.profile is not None
+        assert prepared.expectations[0].expectation_id == expectation_id_for_rule(draft.profile_id, "status")
+        assert expectations.list_for_broker(broker_id) == ()
+        invalid = service.prepare_profile(replace(draft, pack_reference=PackReference("missing", "1")))
+        assert not invalid.is_valid
+        assert "not installed" in invalid.errors[0]
+    finally:
+        database.dispose()

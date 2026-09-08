@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -27,6 +27,19 @@ _PROFILE_FIELDS = {
 _OVERRIDE_FIELDS = {"enabled", "severity", "target", "condition", "actions", "name", "description"}
 
 
+@dataclass(frozen=True)
+class ProfilePreparation:
+    """The side-effect-free result used by a diagnostic-profile draft."""
+
+    profile: DiagnosticProfile | None
+    expectations: tuple[HealthExpectation, ...]
+    errors: tuple[str, ...] = ()
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
+
 class DiagnosticProfileService:
     def __init__(
         self,
@@ -47,6 +60,24 @@ class DiagnosticProfileService:
 
     def list_profiles(self, broker_id: UUID) -> tuple[DiagnosticProfile, ...]:
         return self._profiles.list_for_broker(broker_id)
+
+    def list_pack_references(self) -> tuple[PackReference, ...]:
+        return self._packs.list_references()
+
+    def prepare_profile(
+        self,
+        profile: DiagnosticProfile,
+        *,
+        new_identity: bool = False,
+    ) -> ProfilePreparation:
+        """Canonicalize and resolve a candidate without opening a transaction."""
+        try:
+            canonical, expectations = self._validate_and_resolve(
+                profile, new_identity=new_identity
+            )
+        except (TypeError, ValueError) as error:
+            return ProfilePreparation(None, (), (str(error),))
+        return ProfilePreparation(canonical, expectations)
 
     def get_profile(self, broker_id: UUID, profile_id: UUID) -> DiagnosticProfile:
         profile = self._profiles.get(profile_id)
@@ -140,14 +171,43 @@ class DiagnosticProfileService:
             self._profiles.delete(profile_id, transaction=transaction)
 
     def resolve_profile(self, profile: DiagnosticProfile) -> tuple[HealthExpectation, ...]:
-        _, resolved = self._validate_and_resolve(profile, new_identity=False)
-        return resolved
+        prepared = self.prepare_profile(profile)
+        if not prepared.is_valid:
+            raise ValueError(prepared.errors[0])
+        return prepared.expectations
 
     def resolve_for_broker(self, broker_id: UUID) -> tuple[HealthExpectation, ...]:
         return tuple(
             rule
             for profile in self.list_profiles(broker_id)
             for rule in self.resolve_profile(profile)
+        )
+
+    def resolve_for_broker_with_draft(
+        self,
+        broker_id: UUID,
+        draft: DiagnosticProfile,
+    ) -> ProfilePreparation:
+        """Resolve a whole broker while substituting one unsaved profile draft."""
+        if draft.broker_id != broker_id:
+            return ProfilePreparation(None, (), (
+                "The diagnostic profile does not belong to this broker.",
+            ))
+        prepared = self.prepare_profile(draft, new_identity=False)
+        if not prepared.is_valid:
+            return prepared
+        try:
+            others = tuple(
+                rule
+                for profile in self.list_profiles(broker_id)
+                if profile.profile_id != draft.profile_id
+                for rule in self.resolve_profile(profile)
+            )
+        except (TypeError, ValueError) as error:
+            return ProfilePreparation(None, (), (str(error),))
+        return ProfilePreparation(
+            prepared.profile,
+            tuple((*others, *prepared.expectations)),
         )
 
     def export_profile(self, broker_id: UUID, profile_id: UUID) -> bytes:

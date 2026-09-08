@@ -42,6 +42,7 @@ from topicgate.infrastructure.repository.health_expectation_repository import (
 from topicgate.infrastructure.repository.diagnostic_profile_repository import SqlDiagnosticProfileRepository
 from topicgate.infrastructure.diagnostic_packs import DiagnosticPackRegistry, load_zigbee2mqtt_pack
 from topicgate.app.services.diagnostic_profile_service import DiagnosticProfileService
+from topicgate.app.services.diagnostic_profile_editor import DiagnosticProfileEditor
 from topicgate.infrastructure.repository.expectation_state_repository import (
     ExpectationStateRepository,
 )
@@ -162,6 +163,9 @@ class AppDependencies:
             self._db_context,
             expectation_state_repository=self.expectation_state_repo,
             expectation_failure_repository=self.expectation_failure_repo,
+        )
+        self.diagnostic_profile_editor = DiagnosticProfileEditor(
+            self.diagnostic_profiles, self.health_sink
         )
         self.failure_history_service = FailureHistoryService(
             expectation_failure_repository=self.expectation_failure_repo,

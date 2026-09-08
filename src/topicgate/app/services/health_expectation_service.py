@@ -124,6 +124,49 @@ class HealthExpectationService:
         deadline_check: Callable[[], None] | None = None,
     ) -> DiagnosticReport:
         """Evaluate broker lifecycle health independently of message delivery."""
+        expectations = tuple(
+            expectation
+            for expectation in self._expectation_repo.list_for_broker(broker_id)
+            if expectation.enabled
+        )
+        return self._evaluate_broker(
+            broker_id,
+            expectations,
+            persist=True,
+            stale_after_seconds=stale_after_seconds,
+            evaluated_at=evaluated_at,
+            deadline_check=deadline_check,
+        )
+
+    def preview_broker(
+        self,
+        broker_id: UUID,
+        expectations: tuple[HealthExpectation, ...],
+        *,
+        stale_after_seconds: float = DEFAULT_STALE_AFTER_SECONDS,
+        evaluated_at: datetime | None = None,
+        deadline_check: Callable[[], None] | None = None,
+    ) -> DiagnosticReport:
+        """Evaluate supplied draft expectations without changing live health state."""
+        return self._evaluate_broker(
+            broker_id,
+            tuple(item for item in expectations if item.enabled),
+            persist=False,
+            stale_after_seconds=stale_after_seconds,
+            evaluated_at=evaluated_at,
+            deadline_check=deadline_check,
+        )
+
+    def _evaluate_broker(
+        self,
+        broker_id: UUID,
+        expectations: tuple[HealthExpectation, ...],
+        *,
+        persist: bool,
+        stale_after_seconds: float,
+        evaluated_at: datetime | None,
+        deadline_check: Callable[[], None] | None,
+    ) -> DiagnosticReport:
         stale_after_seconds = _validate_stale_after(stale_after_seconds)
         evaluated_at = _as_utc(evaluated_at or datetime.now(timezone.utc))
         if deadline_check is not None:
@@ -133,11 +176,6 @@ class HealthExpectationService:
             current.message.topic: current
             for current in self._require_current_topics_reader()(broker_id)
         }
-        expectations = tuple(
-            expectation
-            for expectation in self._expectation_repo.list_for_broker(broker_id)
-            if expectation.enabled
-        )
         subscriptions = self._read_subscriptions(broker_id)
         observation_health = self._observation_health(
             metadata,
@@ -160,7 +198,7 @@ class HealthExpectationService:
                 )
                 # Check fresh topic conditions without recording a second occurrence;
                 # message delivery already owns those state transitions.
-                persist_result = (
+                persist_result = persist and (
                     isinstance(expectation.target, BrokerTarget)
                     or isinstance(expectation.condition, TOPIC_STATE_CONDITIONS)
                     or result.failure_code
@@ -172,19 +210,13 @@ class HealthExpectationService:
                     }
                 )
                 topic_findings.append(
-                    (
-                        self._evaluate_condition_result(
-                            expectation,
-                            result,
-                            evaluated_at,
-                            count_occurrence=False,
-                        )
-                        if persist_result
-                        else self._condition_result_to_evaluation(
-                            result,
-                            expectation,
-                            evaluated_at,
-                        )
+                    self._evaluate_condition_result(
+                        expectation,
+                        result,
+                        evaluated_at,
+                        count_occurrence=False,
+                    ) if persist_result else self._condition_result_to_evaluation(
+                        result, expectation, evaluated_at
                     )
                 )
             except Exception:

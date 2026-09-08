@@ -383,6 +383,23 @@ def test_broker_target_is_evaluated_without_a_topic_message(tmp_path) -> None:
     database.dispose()
 
 
+def test_draft_preview_uses_supplied_rules_without_persisting_state(tmp_path) -> None:
+    database = DatabaseContext(f"sqlite:///{tmp_path / 'preview.db'}")
+    broker_id = uuid4()
+    persisted = _expectation(broker_id)
+    evaluator = _service(database, persisted, _metadata())
+    draft = replace(persisted, expectation_id=uuid4(), condition=EqualCondition(b"offline"))
+
+    report = evaluator.preview_broker(broker_id, (draft,), evaluated_at=NOW)
+
+    assert report.aggregate_status is HealthStatus.UNKNOWN
+    assert report.topic_findings[0].expectation_id == draft.expectation_id
+    assert ExpectationStateRepository(database).get(draft.expectation_id) is None
+    assert ExpectationStateRepository(database).get(persisted.expectation_id) is None
+    assert ExpectationFailureRepository(database).get_all_states() == []
+    database.dispose()
+
+
 async def test_health_monitor_evaluates_on_its_lifecycle_schedule() -> None:
     broker_id = uuid4()
     report = MagicMock()
