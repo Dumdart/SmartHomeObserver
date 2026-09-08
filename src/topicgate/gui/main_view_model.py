@@ -95,6 +95,7 @@ from topicgate.processors.condition_factory import ConditionFactory
 
 
 from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
+from topicgate.app.models.topic_history import TopicHistoryResult
 from topicgate.core.models.history_recording import HistoryRecordingStatus
 
 
@@ -103,6 +104,7 @@ class MainViewModel(QObject):
 
     state_changed = Signal()
     history_settings_changed = Signal()
+    event_history_changed = Signal()
     topics_changed = Signal()
     subscriptions_changed = Signal()
     connection_changed = Signal()
@@ -135,6 +137,10 @@ class MainViewModel(QObject):
         self.history_settings_broker: UUID | None = None
         self.history_settings_error: str | None = None
         self._history_settings_generation = 0
+        self.event_history_result: TopicHistoryResult | None = None
+        self.event_history_error: str | None = None
+        self.event_history_busy = False
+        self._event_history_generation = 0
         self._snapshot_service = snapshot_service or BrokerSnapshotService(runtime)
         self._mcp_setup_service = mcp_setup_service
         self._health_query_service = health_query_service
@@ -875,6 +881,40 @@ class MainViewModel(QObject):
 
     def reset_snapshot_query(self) -> None:
         self.apply_snapshot_query(SnapshotQuery())
+
+    def invalidate_event_history(self, *_args) -> None:
+        self._event_history_generation += 1
+        self.event_history_result = None
+        self.event_history_error = None
+        self.event_history_busy = False
+        self.event_history_changed.emit()
+
+    async def query_event_history(
+        self, broker_id: UUID, topic_filter: str, after: datetime | None = None,
+        before: datetime | None = None, cursor: str | None = None, limit: int = 100,
+    ) -> None:
+        self.invalidate_event_history()
+        generation = self._event_history_generation
+        self.event_history_busy = True
+        self.event_history_changed.emit()
+        try:
+            result = await asyncio.to_thread(
+                self._runtime.get_topic_history, broker_id, topic_filter,
+                after=after, before=before, cursor=cursor, limit=limit,
+            )
+        except Exception as error:
+            if generation == self._event_history_generation:
+                self.event_history_error = (
+                    str(error) if isinstance(error, ValueError)
+                    else "Event history could not be read. Refresh to retry."
+                )
+        else:
+            if generation == self._event_history_generation:
+                self.event_history_result = result
+        finally:
+            if generation == self._event_history_generation:
+                self.event_history_busy = False
+                self.event_history_changed.emit()
 
     async def load_history_settings(self, broker_id: UUID) -> None:
         self._history_settings_generation += 1

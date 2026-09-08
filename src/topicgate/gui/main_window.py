@@ -754,6 +754,11 @@ class MainWindow(QMainWindow):
             dialog.history_settings.load_requested.connect(
                 lambda broker_id: self._run_async(self._view_model.load_history_settings(broker_id))
             )
+            dialog.event_history.query_requested.connect(
+                lambda broker_id, topic_filter, after, before, cursor, limit: self._run_async(
+                    self._view_model.query_event_history(broker_id, topic_filter, after, before, cursor, limit)
+                )
+            )
             dialog.history_settings.save_requested.connect(
                 lambda broker_id, enabled, policy: self._run_async(
                     self._view_model.save_history_settings(broker_id, enabled, policy)

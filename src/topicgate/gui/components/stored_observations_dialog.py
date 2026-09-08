@@ -62,6 +62,7 @@ class _QuantityEditor(QWidget):
 
 
 from topicgate.gui.components.history_settings_widget import HistorySettingsWidget
+from topicgate.gui.components.event_history_widget import EventHistoryWidget
 
 
 class StoredObservationsDialog(QDialog):
@@ -86,8 +87,10 @@ class StoredObservationsDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.setObjectName("storedObservationsPages")
         self.tabs.setAccessibleName("Stored observations settings pages")
-        self.tabs.addTab(self._history_page(), "Observation history")
-        self.tabs.addTab(self._retention_page(), "Retention policy")
+        self.tabs.addTab(self._history_page(), "Latest stored state")
+        self.event_history = EventHistoryWidget(view_model)
+        self.tabs.addTab(self.event_history, "Event history")
+        self.tabs.addTab(self._retention_page(), "Latest-state retention")
         self.tabs.addTab(self._cache_page(), "Cache administration")
         self.history_settings = HistorySettingsWidget(view_model)
         self.tabs.addTab(self.history_settings, "History settings")
@@ -105,7 +108,7 @@ class StoredObservationsDialog(QDialog):
         form = QFormLayout()
         self.history_broker = QComboBox()
         self.history_broker.setObjectName("historyBrokerSelection")
-        self.history_broker.setAccessibleName("Observation history broker")
+        self.history_broker.setAccessibleName("Latest stored state broker")
         self.history_broker.setAccessibleDescription(
             "Select the broker whose persisted observations will be queried."
         )
@@ -113,7 +116,7 @@ class StoredObservationsDialog(QDialog):
         form.addRow("Broker", self.history_broker)
         self.history_topic_filter = QLineEdit("#")
         self.history_topic_filter.setObjectName("historyTopicFilter")
-        self.history_topic_filter.setAccessibleName("Observation history topic filter")
+        self.history_topic_filter.setAccessibleName("Latest stored state topic filter")
         self.history_topic_filter.setAccessibleDescription(
             "MQTT topic filter supporting plus and hash wildcards."
         )
@@ -132,7 +135,7 @@ class StoredObservationsDialog(QDialog):
         ))
         self.history_order = QComboBox()
         self.history_order.setObjectName("historySortOrder")
-        self.history_order.setAccessibleName("Observation history sort order")
+        self.history_order.setAccessibleName("Latest stored state sort order")
         for label, order in (
             ("Received · newest first", OrderType.RECEIVED_DESC),
             ("Received · oldest first", OrderType.RECEIVED_ASC),
@@ -147,7 +150,7 @@ class StoredObservationsDialog(QDialog):
         form.addRow("Sort order", self.history_order)
         self.history_limit = QSpinBox()
         self.history_limit.setObjectName("historyResultLimit")
-        self.history_limit.setAccessibleName("Observation history result limit")
+        self.history_limit.setAccessibleName("Latest stored state result limit")
         self.history_limit.setRange(1, 1000)
         self.history_limit.setValue(50)
         form.addRow("Result limit", self.history_limit)
@@ -167,7 +170,7 @@ class StoredObservationsDialog(QDialog):
         layout.addLayout(actions)
         self.history_state = QLabel("Query stored observations to view persisted values.")
         self.history_state.setObjectName("historyQueryState")
-        self.history_state.setAccessibleName("Observation history query status")
+        self.history_state.setAccessibleName("Latest stored state query status")
         self.history_state.setTextFormat(Qt.TextFormat.PlainText)
         self.history_state.setWordWrap(True)
         layout.addWidget(self.history_state)

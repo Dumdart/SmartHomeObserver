@@ -71,3 +71,15 @@ writes are excluded, and queries never flush, connect, enable recording, or prun
 Always inspect `recording`, `retention`, `usage`, and `limitations`. Retention's
 oldest available receive time is a storage horizon, not proof of uninterrupted
 coverage. Settings summaries and eviction generations apply globally where labeled.
+
+## Desktop pages
+
+**Latest stored state** shows one persisted value per topic. **Event history**
+shows individual receipts using the same bounded query as MCP. Search or
+Refresh snapshot starts over; Next page continues the committed snapshot.
+Changing brokers or filters resets the cursor. Payloads are displayed as plain
+text or base64, with provenance and truncation details on selection.
+
+![Latest stored state and separate event history with recording limitations.](images/observation-history-after.png)
+
+![Per-broker recording opt-in and independent history limits.](images/observation-history-settings.png)

@@ -9,6 +9,7 @@
 
 | Tool | Mode | Contract |
 | --- | --- | --- |
+| get_topic_history | Both | Passive observed events; opaque query-scoped cursor, fixed committed snapshot, limit 1..500; recording is per-broker opt-in in Desktop |
 | create_broker | Control | Typed nonsecret settings; exact normalized-name/config reuse, otherwise conflict; no connect |
 | list_health_expectations | Both | Passive definitions with UUID, revision, enabled state, limit 1..100, offset cursor |
 | create_health_expectation | Control | Typed target/condition, metadata, coverage validation, new UUID |

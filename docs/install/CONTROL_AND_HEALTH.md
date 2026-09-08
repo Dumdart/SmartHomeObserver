@@ -1,5 +1,11 @@
 # Control mode and expectation verification
 
+Individual MQTT receipt history is separate from health failure episodes and
+latest-state snapshots. Enable it per broker under **Stored observations → History
+settings**, then use **Event history** or read-only `get_topic_history`. Recording
+starts disabled; large age/count/size limits can slow startup and queries. See
+[history setup, retention, and completeness](../OBSERVATION_HISTORY.md).
+
 TopicGate 1.4 adds profile creation, health expectation lifecycle tools, and bounded health waiting. The plugin remains read-only by default. `.mcp-control.json` is an example control entry; its presence does not select it in the plugin manifest.
 
 Follow the existing host instructions for [Codex](CODEX.md), [Claude Code](CLAUDE_CODE.md), [Cursor](CURSOR.md), or [VS Code/Copilot](VSCODE_COPILOT.md). Codex and Claude guides show separate `topicgate-control` entries. Cursor uses `.cursor/mcp.json`; VS Code uses `.vscode/mcp.json` with `servers`. Set only the explicitly selected entry to `topicgate --mode control`, using the executable installed in that host's environment. Do not run multiple competing control processes against the same database. Do not edit cached plugin manifests as a durable setup method.
