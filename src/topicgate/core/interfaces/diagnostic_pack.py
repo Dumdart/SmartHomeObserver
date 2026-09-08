@@ -25,4 +25,12 @@ class DiagnosticPack(Protocol):
     def build_expectations(
         self,
         broker_id: UUID,
+        profile_id: UUID | None = None,
     ) -> tuple[HealthExpectation, ...]: ...
+
+
+@runtime_checkable
+class DiagnosticPackResolver(Protocol):
+    def resolve(self, reference: PackReference) -> DiagnosticPack: ...
+
+    def list_references(self) -> tuple[PackReference, ...]: ...

@@ -23,6 +23,13 @@ from topicgate.core.models.health.health_enums import HealthSeverity
 from topicgate.core.models.health.health_enums import HealthStatus
 from topicgate.core.models.health.health_expectation import HealthExpectation
 from topicgate.core.models.health.health_transition import HealthTransition
+from topicgate.core.models.diagnostic_profile import (
+    DiagnosticProfile,
+    default_profile_id,
+    expectation_id_for_rule,
+    normalize_profile_name,
+    normalize_rule_id,
+)
 
 
 __all__ = [
@@ -32,6 +39,7 @@ __all__ = [
     "ConditionEvaluationContext",
     "ConditionResult",
     "DiagnosticReport",
+    "DiagnosticProfile",
     "EqualCondition",
     "FreshnessCondition",
     "InRangeCondition",
@@ -51,4 +59,8 @@ __all__ = [
     "TopicTarget",
     "TopicAbsentCondition",
     "TopicExistsCondition",
+    "default_profile_id",
+    "expectation_id_for_rule",
+    "normalize_profile_name",
+    "normalize_rule_id",
 ]

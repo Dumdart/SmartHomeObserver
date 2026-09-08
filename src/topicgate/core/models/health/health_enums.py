@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class HealthSeverity(StrEnum):
     CRITICAL = "critical"
+    WARNING = "warning"
 
 
 class ActionKind(StrEnum):

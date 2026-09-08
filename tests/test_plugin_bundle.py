@@ -126,7 +126,10 @@ async def test_cached_plugin_bundle_exposes_read_only_tools(
     # Check the bundle contract separately from PATH discovery in this test process.
     server_config["command"] = sys.executable
     server_config["args"] = ["-m", "topicgate", "--mode", "read-only"]
-    server_config["env"] = {"TOPICGATE_DATA_DIR": str(tmp_path / "data")}
+    server_config["env"] = {
+        "PYTHONPATH": str(REPOSITORY_ROOT / "src"),
+        "TOPICGATE_DATA_DIR": str(tmp_path / "data"),
+    }
 
     async with Client(config) as client:
         tools = await client.list_tools()

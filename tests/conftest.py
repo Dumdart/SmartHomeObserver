@@ -1,14 +1,15 @@
 import os
-from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import UUID
 
 import pytest
 
 
-os.environ.setdefault(
-    "TOPICGATE_DATA_DIR",
-    str(Path(".pytest_cache/topicgate-data").resolve()),
+_TOPICGATE_TEST_DATA = TemporaryDirectory(
+    prefix="topicgate-tests-",
+    ignore_cleanup_errors=True,
 )
+os.environ["TOPICGATE_DATA_DIR"] = _TOPICGATE_TEST_DATA.name
 
 
 class MemoryCredentialStore:

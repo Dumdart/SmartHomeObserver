@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -97,6 +98,95 @@ def test_health_report_orders_bounds_and_truncates_evidence() -> None:
     assert len(result.expectation_findings[0].evidence_summary) == 500
     assert result.expectation_findings[0].evidence_truncated is True
     assert (result.returned_count, result.omitted_count) == (1, 1)
+    assert len(result.checkpoint.entries) == 2
+    assert result.checkpoint.omitted_count == 0
+    assert result.delta is None
+
+
+def test_checkpoint_and_delta_do_not_depend_on_display_limit() -> None:
+    broker_id = uuid4()
+    first = _expectation(broker_id, "First")
+    second = _expectation(broker_id, "Second")
+    evaluations = tuple(
+        ExpectationEvaluation(
+            item.expectation_id,
+            1,
+            HealthStatus.PROBLEM,
+            NOW,
+            "MISMATCH",
+            item.name,
+            True,
+        )
+        for item in (first, second)
+    )
+    service, _ = _service([first, second], evaluations)
+
+    initial = service.get_health_report(broker_id, limit=1)
+    repeated = service.get_health_report(
+        broker_id,
+        limit=2,
+        checkpoint=initial.checkpoint,
+    )
+
+    assert initial.checkpoint == repeated.checkpoint
+    assert [event.kind for event in repeated.delta.events] == [
+        "continuing",
+        "continuing",
+    ]
+
+
+def test_finding_fingerprint_excludes_mutable_report_fields() -> None:
+    broker_id = uuid4()
+    profile_id = uuid4()
+    expectation = replace(
+        _expectation(broker_id),
+        profile_id=profile_id,
+        rule_id="Device.Online",
+    )
+    evaluation = ExpectationEvaluation(
+        expectation.expectation_id,
+        1,
+        HealthStatus.PROBLEM,
+        NOW,
+        "MISMATCH",
+        "old evidence",
+        True,
+    )
+    service, _ = _service([expectation], [evaluation])
+
+    baseline = service.get_health_report(broker_id).expectation_findings[0]
+    changed_expectation = replace(
+        expectation,
+        revision=9,
+        name="New wording",
+        description="New description",
+        severity=HealthSeverity.WARNING,
+        rule_id="device.online",
+    )
+    service._expectation_management.list_expectations.return_value = (
+        changed_expectation,
+    )
+    service._evaluator.evaluate_broker.return_value = replace(
+        service._evaluator.evaluate_broker.return_value,
+        evaluated_at=NOW.replace(day=5),
+        topic_findings=(
+            replace(
+                evaluation,
+                expectation_revision=9,
+                status=HealthStatus.UNKNOWN,
+                failure_code="OTHER",
+                evidence_summary="new evidence",
+            ),
+        ),
+    )
+
+    changed = service.get_health_report(broker_id).expectation_findings[0]
+
+    assert changed.fingerprint == baseline.fingerprint
+    assert changed.profile_id == profile_id
+    assert changed.rule_id == "device.online"
+    assert changed.matched_topic == "devices/status"
+    assert changed.severity == HealthSeverity.WARNING
 
 
 @pytest.mark.parametrize("limit", [0, 201])

@@ -26,7 +26,7 @@ QLineEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled { color: #737b85
 QPlainTextEdit#decodedPayload, QPlainTextEdit#rawPayload { background: #fbfcfd; }
 QPlainTextEdit#decodedPayload:focus, QPlainTextEdit#rawPayload:focus { background: #ffffff; }
 QTabBar#topicDetailsMode, QTabBar#topicSettingsTabs, QTabBar#healthTabs { background: transparent; }
-QTabBar#topicDetailsMode::tab, QTabBar#topicSettingsTabs::tab, QTabBar#healthTabs::tab { color: #4b5563; background: #f3f5f7; border: 1px solid #b8c0ca; padding: 6px 16px; }
+QTabBar#topicDetailsMode::tab, QTabBar#topicSettingsTabs::tab, QTabBar#healthTabs::tab { color: #4b5563; background: #f3f5f7; border: 1px solid #b8c0ca; height: 22px; padding: 6px 16px; }
 QTabBar#topicDetailsMode::tab:first, QTabBar#topicSettingsTabs::tab:first, QTabBar#healthTabs::tab:first { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
 QTabBar#topicDetailsMode::tab:last, QTabBar#topicSettingsTabs::tab:last, QTabBar#healthTabs::tab:last { border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
 QTabBar#topicDetailsMode::tab:!first, QTabBar#topicSettingsTabs::tab:!first, QTabBar#healthTabs::tab:!first { border-left: 0; }

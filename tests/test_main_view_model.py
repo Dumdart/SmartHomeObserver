@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -91,6 +91,28 @@ def test_expectation_editor_rejects_wildcard_topic_targets() -> None:
             description="",
             expected_values="online",
         )
+
+
+def test_health_refresh_round_trips_latest_checkpoint_for_active_broker() -> None:
+    runtime = runtime_for(FakeObserverRepository())
+    broker_id = runtime.active_broker.id
+    baseline = MagicMock()
+    replacement = MagicMock()
+    health_query = MagicMock()
+    health_query.get_health_report.side_effect = (
+        MagicMock(broker_id=broker_id, checkpoint=baseline),
+        MagicMock(broker_id=broker_id, checkpoint=replacement),
+    )
+    view_model = MainViewModel(runtime, health_query_service=health_query)
+
+    view_model.refresh_health()
+    report = view_model.refresh_health()
+
+    assert report.checkpoint is replacement
+    assert health_query.get_health_report.call_args_list == [
+        call(broker_id),
+        call(broker_id, checkpoint=baseline),
+    ]
 
 
 @pytest.mark.parametrize(

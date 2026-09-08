@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from topicgate.core.models.health import ObservationFindingCode
 from topicgate.gui.components.expectation_editor import ExpectationEditor
 from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.gui.main_view_model import MainViewModel
@@ -44,6 +45,7 @@ class HealthInspector(WorkspacePane):
         self._broker_expectations = ExpectationEditor(view_model, "broker")
         self._tabs.addTab(self._broker_expectations, "Expectations")
         self._tabs.addTab(self._history_page(), "History")
+        self._tabs.addTab(self._changes_page(), "Changes")
         self._tabs.currentChanged.connect(self._tab_changed)
         self.content_layout.addWidget(self._tabs, 1)
 
@@ -86,14 +88,19 @@ class HealthInspector(WorkspacePane):
         self._open_topic.setObjectName("openHealthTopicButton")
         self._edit_expectation = QPushButton("Edit expectation")
         self._edit_expectation.setObjectName("editHealthExpectationButton")
+        self._remove_expectation = QPushButton("Remove")
+        self._remove_expectation.setObjectName("removeHealthExpectationButton")
+        self._remove_expectation.setProperty("danger", True)
         self._view_history = QPushButton("View failure history")
         self._view_history.setObjectName("viewHealthHistoryButton")
         self._open_topic.clicked.connect(self._open_selected_topic)
         self._edit_expectation.clicked.connect(self._edit_selected_expectation)
+        self._remove_expectation.clicked.connect(self._remove_selected_expectation)
         self._view_history.clicked.connect(self._show_selected_history)
         for button in (
             self._open_topic,
             self._edit_expectation,
+            self._remove_expectation,
             self._view_history,
         ):
             button.setEnabled(False)
@@ -179,6 +186,28 @@ class HealthInspector(WorkspacePane):
         layout.addLayout(history_actions)
         return page
 
+    def _changes_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self._delta_message = QLabel()
+        self._delta_message.setObjectName("findingDeltaMessage")
+        self._delta_message.setWordWrap(True)
+        layout.addWidget(self._delta_message)
+        self._delta_table = QTableWidget(0, 5)
+        self._delta_table.setObjectName("findingDeltaTable")
+        self._delta_table.setHorizontalHeaderLabels(
+            ["Change", "Rule", "Target", "Status", "Severity"]
+        )
+        self._configure_table(self._delta_table)
+        header = self._delta_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self._delta_table, 1)
+        return page
+
     def refresh_health(self) -> None:
         self._refresh_button.setEnabled(False)
         try:
@@ -221,6 +250,7 @@ class HealthInspector(WorkspacePane):
                     False,
                 )
                 for item in report.observation_findings
+                if item.code is not ObservationFindingCode.BROKER_DISCONNECTED
             ) + tuple(
                 self._finding_row(item, report.evaluated_at)
                 for item in report.expectation_findings
@@ -236,6 +266,7 @@ class HealthInspector(WorkspacePane):
                 tuple(sorted(broker_rows, key=self._health_row_sort_key)),
             )
             self._render_health_rows(self._topic_table, topic_rows)
+        self._render_delta(report)
         self._render_history()
 
     def show_history(self, topic: str = "") -> None:
@@ -284,6 +315,51 @@ class HealthInspector(WorkspacePane):
         self._more_button.setVisible(history.next_cursor is not None)
         self._history_selection_changed()
 
+    def _render_delta(self, report) -> None:
+        delta = None if report is None else report.delta
+        events = () if delta is None else delta.events
+        self._delta_table.setRowCount(len(events))
+        for row, event in enumerate(events):
+            values = (
+                str(event.kind).replace("_", " ").title(),
+                event.rule_id,
+                event.matched_topic or "broker",
+                self._transition_label(
+                    event.previous_status,
+                    event.current_status,
+                    self._status_label,
+                ),
+                self._transition_label(
+                    event.previous_severity,
+                    event.current_severity,
+                    self._enum_label,
+                ),
+            )
+            for column, value in enumerate(values):
+                cell = QTableWidgetItem(value)
+                cell.setData(Qt.ItemDataRole.UserRole, event)
+                self._delta_table.setItem(row, column, cell)
+
+        if report is None:
+            message = "Health has not been evaluated."
+        elif delta is None:
+            checkpoint = report.checkpoint
+            message = "Baseline captured. Refresh after a health change to compare findings."
+            if checkpoint is not None and not checkpoint.complete:
+                message += (
+                    f" The baseline is incomplete; {checkpoint.omitted_count} "
+                    "finding(s) were omitted."
+                )
+        elif events:
+            message = f"Showing {delta.returned_count} finding change event(s)."
+        else:
+            message = "No finding changes since the previous evaluation."
+        if delta is not None and not delta.complete:
+            message += " Comparison is incomplete; recoveries may be suppressed."
+            if delta.omitted_count:
+                message += f" {delta.omitted_count} additional event(s) were omitted."
+        self._delta_message.setText(message)
+
     def _finding_row(self, item, evaluated_at) -> tuple:
         return (
             item.name or str(item.expectation_id),
@@ -306,6 +382,39 @@ class HealthInspector(WorkspacePane):
                 self._selected_topic,
                 self._selected_expectation,
             )
+
+    def _remove_selected_expectation(self) -> None:
+        if self._selected_expectation is None:
+            return
+        pack_backed = self._view_model.expectation_is_pack_backed(
+            self._selected_expectation
+        )
+        answer = QMessageBox.question(
+            self,
+            "Disable package rule?" if pack_backed else "Remove expectation?",
+            (
+                "Disable this package rule for the active diagnostic profile? "
+                "It can be restored later by updating the profile."
+                if pack_backed
+                else "Remove this expectation? Its active failure will be closed "
+                "and historical episodes will be retained."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._view_model.remove_expectation(self._selected_expectation)
+        except Exception as error:
+            QMessageBox.warning(self, "Unable to remove expectation", str(error))
+            return
+        self._selected_topic = ""
+        self._selected_expectation = None
+        self._open_topic.setEnabled(False)
+        self._edit_expectation.setEnabled(False)
+        self._remove_expectation.setEnabled(False)
+        self._view_history.setEnabled(False)
 
     def _show_selected_history(self) -> None:
         self.show_history(self._selected_topic)
@@ -403,6 +512,15 @@ class HealthInspector(WorkspacePane):
         self._evidence.setPlainText(f"{values[3]}\n\nEvaluated: {evaluated}{truncated}")
         self._open_topic.setEnabled(bool(self._selected_topic))
         self._edit_expectation.setEnabled(self._selected_expectation is not None)
+        self._remove_expectation.setEnabled(self._selected_expectation is not None)
+        if self._selected_expectation is not None:
+            self._remove_expectation.setText(
+                "Disable"
+                if self._view_model.expectation_is_pack_backed(
+                    self._selected_expectation
+                )
+                else "Remove"
+            )
         self._view_history.setEnabled(self._selected_expectation is not None)
 
     @staticmethod
@@ -420,6 +538,21 @@ class HealthInspector(WorkspacePane):
             "unknown": "Unknown",
             "healthy": "Healthy",
         }.get(value, value.replace("_", " ").title())
+
+    @staticmethod
+    def _enum_label(value: object) -> str:
+        text = str(getattr(value, "value", value))
+        return text.replace("_", " ").title()
+
+    @staticmethod
+    def _transition_label(previous, current, formatter) -> str:
+        if previous is None:
+            return formatter(current) if current is not None else "-"
+        if current is None:
+            return f"{formatter(previous)} -> absent"
+        if previous == current:
+            return formatter(current)
+        return f"{formatter(previous)} -> {formatter(current)}"
 
     @staticmethod
     def _health_row_sort_key(row: tuple) -> int:

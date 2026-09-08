@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from topicgate.core.models.health.condition import Condition
@@ -28,6 +29,11 @@ class HealthExpectation:
     actions: frozenset[ActionKind]
     name: str = ""
     description: str = ""
+    profile_id: UUID | None = None
+    rule_id: str = ""
+    rule_schema_version: int = 1
+    source_kind: str = "custom"
+    pack_override: dict[str, Any] | None = None
 
 
 __all__ = [

@@ -1,12 +1,15 @@
 import asyncio
 import os
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -40,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.config.mqtt_config import MqttConfig
+from topicgate.core.interfaces import PackReference
 from topicgate.app.models.expectation_health_report import (
     FailureHistoryItem,
     FailureHistoryResult,
@@ -50,6 +54,7 @@ from topicgate.core.models.current_topic import CurrentTopic
 from topicgate.core.models.observation_status import ObservationStatus
 from topicgate.core.models.topic_message import TopicMessage
 from topicgate.core.models.broker_profile import BrokerProfile
+from topicgate.core.models.diagnostic_profile import DiagnosticProfile
 from topicgate.core.models.broker_summary import BrokerSummary
 from topicgate.core.models.health.condition import InRangeCondition
 from topicgate.core.models.health.condition import FreshnessCondition
@@ -62,6 +67,8 @@ from topicgate.core.models.health import (
     HealthExpectation,
     HealthSeverity,
     HealthStatus,
+    ObservationFindingCode,
+    ObservationHealthFinding,
 )
 from topicgate.core.models.mqtt_observation import MqttObservation as TopicState
 from topicgate.core.models.observer_workspace import ObserverWorkspace
@@ -96,8 +103,14 @@ from topicgate.gui.components.stored_observations_dialog import (
 )
 from topicgate.gui.components.health_inspector import HealthInspector
 from topicgate.gui.components.expectation_editor import ExpectationEditor
+from topicgate.gui.components.diagnostic_profile_editor import (
+    DiagnosticProfileEditorWindow,
+)
 from topicgate.gui.components.topic_details import TopicDetailsPane
-from topicgate.gui.components.workspace_pane import WorkspacePane
+from topicgate.gui.components.workspace_pane import (
+    WORKSPACE_CONTROL_HEIGHT,
+    WorkspacePane,
+)
 from topicgate.gui.gui import MainWindow
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.theme import LIGHT_THEME, apply_light_theme
@@ -106,6 +119,78 @@ from topicgate.presentation.snapshot_presentation import (
     SnapshotQuery,
 )
 from topicgate.presentation.topic_presentation import build_topic_tree
+
+
+def test_diagnostic_profile_rules_show_only_the_selected_draft() -> None:
+    application = QApplication.instance() or QApplication([])
+    broker_id = uuid4()
+    other_profile = DiagnosticProfile(uuid4(), broker_id, "Other")
+    draft = DiagnosticProfile(uuid4(), broker_id, "Draft")
+
+    def rules_for(profile: DiagnosticProfile) -> tuple[HealthExpectation, ...]:
+        if profile.pack_reference is None:
+            return ()
+        return tuple(
+            HealthExpectation(
+                uuid4(),
+                1,
+                True,
+                HealthSeverity.WARNING,
+                BrokerTarget(broker_id),
+                EqualCondition(b"online"),
+                frozenset(),
+                name=f"Rule {index}",
+                profile_id=profile.profile_id,
+                rule_id=f"rule-{index}",
+                source_kind="pack",
+            )
+            for index in range(7)
+        )
+
+    class FakeDiagnosticProfileEditor:
+        def __init__(self) -> None:
+            self.draft = None
+            self.validation = SimpleNamespace(errors=(), is_valid=True)
+            self.is_dirty = False
+            self.profiles = (draft, other_profile)
+            self.pack_references = (PackReference("zigbee2mqtt", "1.0.0"),)
+
+        def open_broker(self, requested_broker_id) -> None:
+            assert requested_broker_id == broker_id
+            self.draft = draft
+
+        def validate(self):
+            return SimpleNamespace(
+                expectations=(*rules_for(other_profile), *rules_for(self.draft))
+            )
+
+        def set_pack(self, reference) -> None:
+            self.draft = replace(self.draft, pack_reference=reference)
+            self.is_dirty = True
+
+        def replace_draft(self, replacement) -> None:
+            self.draft = replacement
+
+    editor = FakeDiagnosticProfileEditor()
+    other_profile = replace(other_profile, pack_reference=editor.pack_references[0])
+    dialog = DiagnosticProfileEditorWindow(editor, broker_id)
+    table = dialog.findChild(QTableWidget, "diagnosticProfileRules")
+    pack = dialog.findChild(QComboBox, "diagnosticPackSelector")
+
+    assert table is not None
+    assert pack is not None
+    assert table.rowCount() == 0
+
+    pack.setCurrentIndex(1)
+    application.processEvents()
+
+    assert table.rowCount() == 7
+    assert {table.item(row, 0).text() for row in range(table.rowCount())} == {
+        f"rule-{index}" for index in range(7)
+    }
+    editor.is_dirty = False
+    dialog.close()
+    application.processEvents()
 
 
 def test_health_action_opens_broker_scoped_inspector() -> None:
@@ -128,6 +213,7 @@ def test_health_action_opens_broker_scoped_inspector() -> None:
     assert stack.currentWidget() is inspector
     assert inspector.findChild(QTableWidget, "currentBrokerHealthTable") is not None
     assert inspector.findChild(QTableWidget, "currentTopicHealthTable") is not None
+    assert inspector.findChild(QTableWidget, "findingDeltaTable") is not None
     assert inspector.findChild(QWidget, "brokerExpectationEditor") is not None
     assert inspector.findChild(QTableWidget, "healthHistoryTable") is not None
     window.close()
@@ -606,6 +692,11 @@ def test_workspace_headers_and_primary_controls_share_rows() -> None:
     ) == 1
     assert len({widget.height() for widget in controls}) == 1
     assert all(widget.height() >= widget.sizeHint().height() for widget in controls)
+    assert all(
+        tab_bar.tabRect(index).height() == WORKSPACE_CONTROL_HEIGHT
+        for tab_bar in (controls[1], controls[3])
+        for index in range(tab_bar.count())
+    )
 
     window.close()
     application.processEvents()
@@ -869,6 +960,93 @@ def test_health_history_deletes_selected_episode_after_confirmation() -> None:
     application.processEvents()
 
 
+@pytest.mark.parametrize(
+    ("source_kind", "button_text", "service_method"),
+    (
+        ("custom", "Remove", "delete_expectation"),
+        ("pack", "Disable", "disable_expectation"),
+    ),
+)
+def test_health_overview_removes_selected_expectation_after_confirmation(
+    source_kind: str,
+    button_text: str,
+    service_method: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    runtime = runtime_for(repository)
+    expectation_id = uuid4()
+    finding = SimpleNamespace(
+        expectation_id=expectation_id,
+        name="Connected",
+        target_kind="broker",
+        target="broker",
+        status=HealthStatus.PROBLEM,
+        evidence_summary="actual=disconnected; expected=connected",
+        evidence_truncated=False,
+    )
+    report = SimpleNamespace(
+        broker_id=runtime.active_broker.id,
+        evaluated_at=datetime.now(timezone.utc),
+        aggregate_status=HealthStatus.PROBLEM,
+        evidence_complete=True,
+        observation_status=HealthStatus.HEALTHY,
+        observation_findings=(),
+        expectation_findings=(finding,),
+        active_failure_count=1,
+        returned_count=1,
+        omitted_count=0,
+        checkpoint=None,
+        delta=None,
+    )
+    health_query = MagicMock()
+    health_query.get_health_report.return_value = report
+    management = MagicMock()
+    management.list_expectations.return_value = (
+        HealthExpectation(
+            expectation_id,
+            1,
+            True,
+            HealthSeverity.CRITICAL,
+            BrokerTarget(runtime.active_broker.id),
+            EqualCondition("connected"),
+            frozenset(),
+            "Connected",
+            source_kind=source_kind,
+        ),
+    )
+    view_model = MainViewModel(
+        runtime,
+        health_query_service=health_query,
+        expectation_management_service=management,
+    )
+    inspector = HealthInspector(view_model)
+    remove_button = inspector.findChild(
+        QPushButton, "removeHealthExpectationButton"
+    )
+    assert remove_button.property("danger") is True
+    assert not remove_button.isEnabled()
+
+    view_model.refresh_health()
+    inspector.findChild(QTableWidget, "currentBrokerHealthTable").selectRow(0)
+    assert remove_button.isEnabled()
+    assert remove_button.text() == button_text
+
+    with patch(
+        "topicgate.gui.components.health_inspector.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        remove_button.click()
+
+    getattr(management, service_method).assert_called_once_with(
+        expectation_id,
+        broker_id=runtime.active_broker.id,
+    )
+    assert not remove_button.isEnabled()
+    inspector.deleteLater()
+    application.processEvents()
+
+
 def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
@@ -1039,6 +1217,8 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
         active_failure_count=0,
         returned_count=1,
         omitted_count=0,
+        checkpoint=None,
+        delta=None,
     )
     health_query = MagicMock()
     health_query.get_health_report.return_value = report
@@ -1064,6 +1244,102 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
     ).text()
     assert window._inspector_stack.currentWidget() is window._topic_details
     window.close()
+    application.processEvents()
+
+
+def test_health_overview_omits_synthetic_broker_disconnected_finding() -> None:
+    application = QApplication.instance() or QApplication([])
+    runtime = runtime_for(FakeGuiRepository())
+    report = SimpleNamespace(
+        broker_id=runtime.active_broker.id,
+        evaluated_at=datetime.now(timezone.utc),
+        aggregate_status=HealthStatus.PROBLEM,
+        evidence_complete=True,
+        observation_status=HealthStatus.PROBLEM,
+        observation_findings=(
+            ObservationHealthFinding(
+                ObservationFindingCode.BROKER_DISCONNECTED,
+                HealthStatus.PROBLEM,
+                "Broker is not connected.",
+            ),
+            ObservationHealthFinding(
+                ObservationFindingCode.DROPPED_MESSAGES,
+                HealthStatus.PROBLEM,
+                "One message was dropped.",
+            ),
+        ),
+        expectation_findings=(),
+        active_failure_count=0,
+        returned_count=0,
+        omitted_count=0,
+        checkpoint=None,
+        delta=None,
+    )
+    health_query = MagicMock()
+    health_query.get_health_report.return_value = report
+    inspector = HealthInspector(
+        MainViewModel(runtime, health_query_service=health_query)
+    )
+
+    inspector.refresh_health()
+
+    table = inspector.findChild(QTableWidget, "currentBrokerHealthTable")
+    assert table.rowCount() == 1
+    assert table.item(0, 0).text() == "Dropped Messages"
+    inspector.deleteLater()
+    application.processEvents()
+
+
+def test_health_inspector_renders_latest_finding_delta() -> None:
+    application = QApplication.instance() or QApplication([])
+    runtime = runtime_for(FakeGuiRepository())
+    broker_id = runtime.active_broker.id
+    event = SimpleNamespace(
+        kind="severity_change",
+        rule_id="device.online",
+        matched_topic="devices/kitchen/status",
+        previous_status=HealthStatus.PROBLEM,
+        current_status=HealthStatus.PROBLEM,
+        previous_severity=HealthSeverity.WARNING,
+        current_severity=HealthSeverity.CRITICAL,
+    )
+    report = SimpleNamespace(
+        broker_id=broker_id,
+        evaluated_at=datetime.now(timezone.utc),
+        aggregate_status=HealthStatus.PROBLEM,
+        evidence_complete=True,
+        observation_status=HealthStatus.HEALTHY,
+        observation_findings=(),
+        expectation_findings=(),
+        active_failure_count=1,
+        returned_count=0,
+        omitted_count=0,
+        checkpoint=SimpleNamespace(complete=True, omitted_count=0),
+        delta=SimpleNamespace(
+            events=(event,),
+            complete=True,
+            returned_count=1,
+            omitted_count=0,
+        ),
+    )
+    health_query = MagicMock()
+    health_query.get_health_report.return_value = report
+    inspector = HealthInspector(
+        MainViewModel(runtime, health_query_service=health_query)
+    )
+
+    inspector.refresh_health()
+
+    table = inspector.findChild(QTableWidget, "findingDeltaTable")
+    message = inspector.findChild(QLabel, "findingDeltaMessage")
+    assert table.rowCount() == 1
+    assert table.item(0, 0).text() == "Severity Change"
+    assert table.item(0, 1).text() == "device.online"
+    assert table.item(0, 2).text() == "devices/kitchen/status"
+    assert table.item(0, 3).text() == "Failed"
+    assert table.item(0, 4).text() == "Warning -> Critical"
+    assert message.text() == "Showing 1 finding change event(s)."
+    inspector.close()
     application.processEvents()
 
 

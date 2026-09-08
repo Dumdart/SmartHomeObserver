@@ -10,6 +10,8 @@ from topicgate.infrastructure.database.models.mqtt_config_row import MqttConfigR
 from topicgate.infrastructure.database.models.observer_workspace_row import (
     ObserverWorkspaceRow,
 )
+from topicgate.core.models.diagnostic_profile import DEFAULT_PROFILE_NAME, default_profile_id, utc_now
+from topicgate.infrastructure.database.models.diagnostic_profile_row import DiagnosticProfileRow
 
 
 class BrokerRepository:
@@ -96,6 +98,22 @@ class BrokerRepository:
         )
         session.add(row)
         session.flush()
+        now = utc_now()
+        session.add(
+            DiagnosticProfileRow(
+                profile_id=default_profile_id(row.id),
+                broker_id=row.id,
+                name=DEFAULT_PROFILE_NAME,
+                normalized_name=DEFAULT_PROFILE_NAME.casefold(),
+                description="",
+                pack_id=None,
+                pack_version=None,
+                rule_schema_version=1,
+                is_default=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
         return cls._to_identity(row)
 
     def update_profile_name(self, profile_id: UUID, name: str) -> None:

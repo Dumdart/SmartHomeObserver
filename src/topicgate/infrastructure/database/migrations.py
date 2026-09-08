@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection, Engine
 
 
 BASELINE_REVISION = "93fa5748f4b5"
-EXPECTED_SCHEMA_REVISION = "b3e7d2c9f610"
+EXPECTED_SCHEMA_REVISION = "c4d8a7e1f302"
 BASELINE_TABLES = {
     "app_config",
     "broker_profile",

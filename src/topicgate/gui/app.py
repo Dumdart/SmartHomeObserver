@@ -141,7 +141,10 @@ class App:
                 self._dependencies.support_bundle_archive_writer
             ),
         )
-        self._window = MainWindow(self._view_model)
+        self._window = MainWindow(
+            self._view_model,
+            diagnostic_profile_editor=self._dependencies.diagnostic_profile_editor,
+        )
 
 
     async def run(self) -> int:

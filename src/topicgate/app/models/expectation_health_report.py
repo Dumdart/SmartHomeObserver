@@ -1,16 +1,33 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from topicgate.core.models.health import (
+    HealthSeverity,
     HealthStatus,
     ObservationHealthFinding,
 )
 
 
+FindingProtocolVersion = Literal[1]
+FindingDeltaKind = Literal[
+    "new",
+    "continuing",
+    "recovered",
+    "unknown",
+    "severity_change",
+]
+
+
 @dataclass(frozen=True)
 class ExpectationHealthFinding:
     expectation_id: UUID
+    profile_id: UUID
+    rule_id: str
+    severity: HealthSeverity
+    matched_topic: str | None
+    fingerprint: str
     expectation_revision: int
     name: str
     description: str
@@ -21,6 +38,47 @@ class ExpectationHealthFinding:
     evidence_summary: str | None
     evidence_complete: bool
     evidence_truncated: bool
+
+
+@dataclass(frozen=True)
+class FindingCheckpointEntry:
+    profile_id: UUID
+    rule_id: str
+    matched_topic: str | None
+    fingerprint: str
+    status: HealthStatus
+    severity: HealthSeverity
+
+
+@dataclass(frozen=True)
+class FindingCheckpoint:
+    version: FindingProtocolVersion
+    broker_id: UUID
+    entries: tuple[FindingCheckpointEntry, ...]
+    complete: bool
+    omitted_count: int
+
+
+@dataclass(frozen=True)
+class FindingDeltaEvent:
+    kind: FindingDeltaKind
+    profile_id: UUID
+    rule_id: str
+    matched_topic: str | None
+    fingerprint: str
+    previous_status: HealthStatus | None
+    current_status: HealthStatus | None
+    previous_severity: HealthSeverity | None
+    current_severity: HealthSeverity | None
+
+
+@dataclass(frozen=True)
+class FindingDelta:
+    version: FindingProtocolVersion
+    events: tuple[FindingDeltaEvent, ...]
+    complete: bool
+    returned_count: int
+    omitted_count: int
 
 
 @dataclass(frozen=True)
@@ -35,6 +93,8 @@ class ExpectationHealthReport:
     active_failure_count: int
     returned_count: int
     omitted_count: int
+    checkpoint: FindingCheckpoint
+    delta: FindingDelta | None
 
 
 @dataclass(frozen=True)

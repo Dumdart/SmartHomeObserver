@@ -381,6 +381,10 @@ async def test_wait_full_scope_before_truncation_and_subset(dependencies):
     assert result["outcome"] == "timed_out"
     assert result["evaluated_count"] == 203
     assert result["final_report"].omitted_count == 202
+    assert len(result["final_report"].checkpoint.entries) == 200
+    assert result["final_report"].checkpoint.omitted_count == 3
+    assert result["final_report"].checkpoint.complete is False
+    assert result["final_report"].delta is None
     result = await service.wait(broker, required_expectation_ids=(identity,), limit=1)
     assert result["outcome"] == "satisfied"
     assert result["scope"] == "required_subset"

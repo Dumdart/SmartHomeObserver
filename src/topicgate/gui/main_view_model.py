@@ -14,6 +14,7 @@ from topicgate.app.models.broker_snapshot import BrokerSnapshot
 from topicgate.app.models.expectation_health_report import (
     ExpectationHealthReport,
     FailureHistoryResult,
+    FindingCheckpoint,
 )
 from topicgate.app.services.broker_snapshot_service import BrokerSnapshotService
 from topicgate.app.services.expectation_management_service import (
@@ -130,6 +131,7 @@ class MainViewModel(QObject):
         self._support_bundle_exporter = support_bundle_exporter
         self._support_bundle_archive_writer = support_bundle_archive_writer
         self._health_report_result: ExpectationHealthReport | None = None
+        self._health_checkpoints: dict[UUID, FindingCheckpoint] = {}
         self._health_history_result = FailureHistoryResult((), None, 0)
         self._snapshot_query = SnapshotQuery()
         self._topic = topic
@@ -237,11 +239,26 @@ class MainViewModel(QObject):
     def refresh_health(self) -> ExpectationHealthReport:
         if self._health_query_service is None:
             raise RuntimeError("Health reporting is unavailable.")
-        self._health_report_result = self._health_query_service.get_health_report(
-            self.active_broker_profile.id
-        )
+        self._health_report_result = self._evaluate_health()
         self.health_changed.emit()
         return self._health_report_result
+
+    def _evaluate_health(self) -> ExpectationHealthReport:
+        if self._health_query_service is None:
+            raise RuntimeError("Health reporting is unavailable.")
+        broker_id = self.active_broker_profile.id
+        checkpoint = self._health_checkpoints.get(broker_id)
+        report = (
+            self._health_query_service.get_health_report(broker_id)
+            if checkpoint is None
+            else self._health_query_service.get_health_report(
+                broker_id,
+                checkpoint=checkpoint,
+            )
+        )
+        if report.checkpoint is not None:
+            self._health_checkpoints[broker_id] = report.checkpoint
+        return report
 
     def query_health_history(
         self,
@@ -417,13 +434,37 @@ class MainViewModel(QObject):
         )
         self._refresh_after_health_change()
 
-    def _refresh_after_health_change(self) -> None:
-        if self._health_query_service is not None:
-            self._health_report_result = (
-                self._health_query_service.get_health_report(
+    def expectation_is_pack_backed(self, expectation_id: UUID) -> bool:
+        service = self._require_expectation_management()
+        expectation = next(
+            (
+                item
+                for item in service.list_expectations(
                     self.active_broker_profile.id
                 )
+                if item.expectation_id == expectation_id
+            ),
+            None,
+        )
+        return expectation is not None and expectation.source_kind == "pack"
+
+    def remove_expectation(self, expectation_id: UUID) -> None:
+        service = self._require_expectation_management()
+        if self.expectation_is_pack_backed(expectation_id):
+            service.disable_expectation(
+                expectation_id,
+                broker_id=self.active_broker_profile.id,
             )
+        else:
+            service.delete_expectation(
+                expectation_id,
+                broker_id=self.active_broker_profile.id,
+            )
+        self._refresh_after_health_change()
+
+    def _refresh_after_health_change(self) -> None:
+        if self._health_query_service is not None:
+            self._health_report_result = self._evaluate_health()
         self.health_changed.emit()
 
     def _require_expectation_management(self) -> ExpectationManagementService:
@@ -1303,6 +1344,7 @@ class MainViewModel(QObject):
             )
         async with self._operation("broker"):
             await self._runtime.delete_broker(profile_id)
+            self._health_checkpoints.pop(profile_id, None)
             if active_profile_id == profile_id:
                 self._topic = ""
                 self.refresh_snapshot()
