@@ -22,6 +22,10 @@ from topicgate.app.services.broker_resolver import BrokerResolver
 from topicgate.app.services.control_operation_service import ControlOperationService
 from topicgate.app.services.mcp_setup_service import McpSetupService
 from topicgate.app.broker_runtime_state import BrokerRuntimeState
+from topicgate.app.services.support_bundle_export_service import (
+    SupportBundleExporter,
+)
+from topicgate.app.services.support_bundle_service import SupportBundleService
 from topicgate.app.topicgate_runtime import TopicGateRuntime
 from topicgate.core.interfaces.observer_repository import ObserverRepository
 from topicgate.core.models.broker_profile import BrokerProfile
@@ -129,9 +133,7 @@ class AppDependencies:
             transaction_manager=self._db_context,
             transition_tracker=self.transition_tracker,
             action_dispatcher=self.action_dispatcher,
-            subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
-                broker_id
-            ).workspace.subscriptions,
+            subscriptions_reader=self.broker_profiles.list_subscriptions,
             broker_metadata_reader=lambda broker_id: (
                 self.broker_runtime_state.repositories[broker_id]
             ),
@@ -144,9 +146,7 @@ class AppDependencies:
             expectation_failure_repository=self.expectation_failure_repo,
             transaction_manager=self._db_context,
             control_operation=self.control_operations.operation,
-            subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
-                broker_id
-            ).workspace.subscriptions,
+            subscriptions_reader=self.broker_profiles.list_subscriptions,
         )
         self.failure_history_service = FailureHistoryService(
             expectation_failure_repository=self.expectation_failure_repo,
@@ -156,9 +156,7 @@ class AppDependencies:
             health_expectation_repository=self.health_expectation_repo,
             expectation_state_repository=self.expectation_state_repo,
             expectation_failure_repository=self.expectation_failure_repo,
-            subscriptions_reader=lambda broker_id: self.broker_profiles.get_profile(
-                broker_id
-            ).workspace.subscriptions,
+            subscriptions_reader=self.broker_profiles.list_subscriptions,
         )
         self.health_query_service = HealthQueryService(
             self.health_sink,
@@ -193,6 +191,7 @@ class AppDependencies:
         )
         self.snapshot_service = BrokerSnapshotService(
             self.runtime,
+            current_topics=self.topic_messages,
             resolver=self.broker_resolver,
         )
         self.mcp_setup = McpSetupService(
@@ -202,6 +201,20 @@ class AppDependencies:
             self.credential_store,
             database_path.parent,
             database_path,
+            broker_reader=self.broker_profiles.list_profile_summaries,
+            active_broker_reader=self.broker_profiles.get_profile_summary,
+            subscriptions_reader=self.broker_profiles.list_subscriptions,
+        )
+        self.support_bundle_service = SupportBundleService(
+            self.runtime,
+            self.snapshot_service,
+            health_query_service=self.health_query_service,
+            preflight_reader=self.mcp_setup.preflight,
+            broker_reader=self.broker_profiles.list_profile_summaries,
+            version=self.mcp_setup.information.version,
+        )
+        self.support_bundle_exporter = SupportBundleExporter(
+            self.support_bundle_service
         )
         self.health_monitor = BrokerHealthMonitor(
             self.health_sink,

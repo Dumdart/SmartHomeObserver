@@ -91,13 +91,31 @@ class BrokerSnapshotService:
     ) -> BrokerSnapshot:
         """Build current broker state without activation, waiting, or I/O."""
         resolved = self._resolver.resolve(broker)
+        return self.build_resolved_current(
+            resolved,
+            topic_filter=topic_filter,
+            max_age_seconds=max_age_seconds,
+            result_limit=result_limit,
+            payload_limit_bytes=payload_limit_bytes,
+        )
+
+    def build_resolved_current(
+        self,
+        broker: BrokerSummary,
+        *,
+        topic_filter: str = "#",
+        max_age_seconds: float | None = None,
+        result_limit: int = DEFAULT_SNAPSHOT_RESULT_LIMIT,
+        payload_limit_bytes: int = MAX_RENDERED_PAYLOAD_BYTES,
+    ) -> BrokerSnapshot:
+        """Build current state from an already-safe broker summary."""
         validated_filter = self._validate_topic_filter(topic_filter)
         max_age_seconds = self._validate_max_age(max_age_seconds)
         result_limit = self._validate_result_limit(result_limit)
         payload_limit_bytes = self._validate_payload_limit(payload_limit_bytes)
 
         return self._capture(
-            resolved,
+            broker,
             topic_filter=validated_filter,
             max_age_seconds=max_age_seconds,
             result_limit=result_limit,
