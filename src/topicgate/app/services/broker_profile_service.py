@@ -121,19 +121,30 @@ class BrokerProfileService:
             raise KeyError(f"Unknown broker profile: {normalized_name}")
         return self.get_profile(identity.id)
 
-    def list_profile_summaries(self) -> tuple[BrokerProfileSummary, ...]:  # noqa: F821
+    def list_profile_summaries(self) -> tuple[BrokerProfileSummary, ...]:
         return tuple(
-            BrokerProfileSummary(
-                profile.id,
-                profile.name,
-                profile.config.host,
-                profile.config.port,
-                profile.config.username,
-                profile.config.use_tls,
-            )
-            for profile in self.get_all_profiles()
+            self.get_profile_summary(identity.id)
+            for identity in self.brokers.list_profiles()
         )
 
+    def get_profile_summary(
+        self,
+        profile_id: UUID | None = None,
+    ) -> BrokerProfileSummary:
+        identity = self.brokers.get_profile(profile_id)
+        config = self.configs.get(identity.id)
+        return BrokerProfileSummary(
+            identity.id,
+            identity.name,
+            config.host,
+            config.port,
+            config.username,
+            config.use_tls,
+        )
+
+    def list_subscriptions(self, profile_id: UUID) -> tuple[Subscription, ...]:
+        identity = self.brokers.get_profile(profile_id)
+        return self.subscriptions.list_for_workspace(identity.workspace_id)
 
     def test_profile(
         self,

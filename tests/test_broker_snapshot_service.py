@@ -288,6 +288,21 @@ async def test_async_and_synchronous_snapshot_reads_share_one_result() -> None:
     assert runtime.get_current_topics.call_count == 2
 
 
+def test_resolved_snapshot_bypasses_broker_resolution() -> None:
+    _, selected, runtime = snapshot_service(observation("sensor/value", b"12"))
+    resolver = MagicMock()
+    service = BrokerSnapshotService(
+        runtime,
+        resolver=resolver,
+        clock=lambda: NOW,
+    )
+
+    snapshot = service.build_resolved_current(selected)
+
+    assert snapshot.broker.id == selected.id
+    resolver.resolve.assert_not_called()
+
+
 async def test_observe_activates_waits_and_reports_actual_duration() -> None:
     monotonic_values = iter((10.0, 10.75))
     waited: list[float] = []

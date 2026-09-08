@@ -1,15 +1,21 @@
+from collections.abc import Callable
 import importlib.util
 from importlib.metadata import PackageNotFoundError, version
 import json
 from pathlib import Path
 import shutil
 import sys
+from uuid import UUID
 
 from sqlalchemy import text
 
 from topicgate.app.models.mcp_setup import McpPreflightCheck, McpSetupInformation
 from topicgate.app.services.broker_snapshot_service import BrokerSnapshotService
 from topicgate.app.topicgate_runtime import TopicGateRuntime
+from topicgate.core.config.mqtt_config import MqttConfig
+from topicgate.core.models.broker_profile_summary import BrokerProfileSummary
+from topicgate.core.models.broker_summary import BrokerSummary
+from topicgate.core.models.subscription import Subscription
 from topicgate.infrastructure.credentials.credential_store import CredentialStore
 from topicgate.infrastructure.database.database_context import DatabaseContext
 from topicgate.infrastructure.database.migrations import EXPECTED_SCHEMA_REVISION
@@ -26,11 +32,20 @@ class McpSetupService:
         credential_store: CredentialStore,
         data_path: Path,
         database_path: Path,
+        *,
+        broker_reader: Callable[[], tuple[BrokerProfileSummary, ...]] | None = None,
+        active_broker_reader: Callable[[], BrokerProfileSummary] | None = None,
+        subscriptions_reader: (
+            Callable[[UUID], tuple[Subscription, ...]] | None
+        ) = None,
     ) -> None:
         self._runtime = runtime
         self._snapshots = snapshot_service
         self._database = database
         self._credential_store = credential_store
+        self._broker_reader = broker_reader
+        self._active_broker_reader = active_broker_reader
+        self._subscriptions_reader = subscriptions_reader
         executable = shutil.which("topicgate")
         if executable:
             command = str(Path(executable).resolve())
@@ -73,7 +88,11 @@ class McpSetupService:
     def preflight(self) -> tuple[McpPreflightCheck, ...]:
         checks = [self._database_check(), self._migration_check()]
         checks.append(self._credential_check())
-        brokers = self._runtime.list_brokers()
+        brokers = (
+            self._runtime.list_brokers()
+            if self._broker_reader is None
+            else self._broker_reader()
+        )
         checks.append(
             McpPreflightCheck(
                 "Broker profiles",
@@ -84,7 +103,12 @@ class McpSetupService:
             )
         )
         usable = sum(
-            len(self._runtime.list_subscriptions(broker.id)) for broker in brokers
+            len(
+                self._runtime.list_subscriptions(broker.id)
+                if self._subscriptions_reader is None
+                else self._subscriptions_reader(broker.id)
+            )
+            for broker in brokers
         )
         checks.append(
             McpPreflightCheck(
@@ -96,7 +120,14 @@ class McpSetupService:
             )
         )
         try:
-            self._snapshots.build_current(self._runtime.active_broker.id)
+            active_broker = (
+                self._runtime.active_broker
+                if self._active_broker_reader is None
+                else self._active_broker_reader()
+            )
+            self._snapshots.build_resolved_current(
+                self._snapshot_broker(active_broker)
+            )
         except Exception as error:
             checks.append(
                 McpPreflightCheck(
@@ -127,6 +158,19 @@ class McpSetupService:
             )
         )
         return tuple(checks)
+
+    @staticmethod
+    def _snapshot_broker(
+        broker: BrokerSummary | BrokerProfileSummary,
+    ) -> BrokerSummary:
+        if isinstance(broker, BrokerSummary):
+            return broker
+        return BrokerSummary(
+            broker.id,
+            broker.name,
+            MqttConfig("", broker.port, "", "", broker.use_tls),
+            False,
+        )
 
     def _database_check(self) -> McpPreflightCheck:
         try:

@@ -136,6 +136,10 @@ class App:
             expectation_management_service=(
                 self._dependencies.expectation_management_service
             ),
+            support_bundle_exporter=self._dependencies.support_bundle_exporter,
+            support_bundle_archive_writer=(
+                self._dependencies.support_bundle_archive_writer
+            ),
         )
         self._window = MainWindow(
             self._view_model,

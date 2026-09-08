@@ -119,6 +119,7 @@ async def test_read_only_server_hides_every_control_capability() -> None:
         health_query_service=MagicMock(),
         health_wait_service=MagicMock(),
         expectation_management_service=MagicMock(),
+        support_bundle_exporter=MagicMock(),
         service_items=(),
     )
 
@@ -140,9 +141,37 @@ async def test_read_only_server_hides_every_control_capability() -> None:
         "list_subscriptions",
         "list_topics",
         "query_failure_history",
+        "get_support_bundle",
         "list_health_expectations",
     }
     assert all(item.annotations.readOnlyHint is True for item in tools)
+
+
+async def test_control_server_keeps_support_bundle_read_only() -> None:
+    runtime = mcp_runtime()
+    dependencies = SimpleNamespace(
+        runtime=runtime,
+        broker_resolver=resolver(runtime),
+        snapshot_service=MagicMock(),
+        health_query_service=MagicMock(),
+        health_wait_service=MagicMock(),
+        expectation_management_service=MagicMock(),
+        support_bundle_exporter=MagicMock(),
+        service_items=(),
+    )
+
+    with patch(
+        "topicgate.mcp.server.AppDependencies",
+        return_value=dependencies,
+    ):
+        server = Server(McpMode.CONTROL)
+
+    async with Client(server.mcp) as client:
+        tools = {item.name: item for item in await client.list_tools()}
+
+    support_bundle = tools["get_support_bundle"]
+    assert support_bundle.annotations.readOnlyHint is True
+    assert support_bundle.annotations.openWorldHint is False
 
 
 def test_mcp_mode_defaults_to_read_only_and_requires_explicit_control() -> None:

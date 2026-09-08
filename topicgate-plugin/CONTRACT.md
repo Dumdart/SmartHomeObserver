@@ -17,6 +17,7 @@
 | get_health_report | Control, existing | Fresh evaluation and possible local transition writes; no activation/wait |
 | query_failure_history | Both, existing | Passive bounded historical evidence |
 | wait_for_broker_health | Control | One bounded wait using an already active connected broker; no reconnect/publish |
+| get_support_bundle | Both | Passive bounded JSON/Markdown with manifest; no files, selectors, credentials, or payloads |
 
 Requests, encodings, result fields, and workflow rules are detailed in [manage-mqtt-health](skills/manage-mqtt-health/SKILL.md). Only `critical` severity and `log`/`store_failure` actions are supported. MQTT expected values are bytes encoded as utf8/base64; broker connection statuses are text. Numeric bounds accept decimal strings without float conversion. No credential references or raw password inputs are supported. Username profiles without an existing UUID-bound credential return `needs_credentials`, with Desktop configuration as the resumable next step.
 
