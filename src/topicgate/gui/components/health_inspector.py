@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from topicgate.core.models.health import ObservationFindingCode
 from topicgate.gui.components.expectation_editor import ExpectationEditor
 from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.gui.main_view_model import MainViewModel
@@ -249,6 +250,7 @@ class HealthInspector(WorkspacePane):
                     False,
                 )
                 for item in report.observation_findings
+                if item.code is not ObservationFindingCode.BROKER_DISCONNECTED
             ) + tuple(
                 self._finding_row(item, report.evaluated_at)
                 for item in report.expectation_findings

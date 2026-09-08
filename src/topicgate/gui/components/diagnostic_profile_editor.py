@@ -178,8 +178,13 @@ class DiagnosticProfileEditorWindow(QDialog):
             self._pack.setCurrentIndex(max(0, pack_index))
             prepared = self._editor.validate()
             self._errors.setText("\n".join(self._editor.validation.errors))
-            self._rules.setRowCount(len(prepared.expectations))
-            for row, rule in enumerate(prepared.expectations):
+            draft_expectations = tuple(
+                rule
+                for rule in prepared.expectations
+                if rule.profile_id == draft.profile_id
+            )
+            self._rules.setRowCount(len(draft_expectations))
+            for row, rule in enumerate(draft_expectations):
                 target = getattr(rule.target, "topic", "Broker")
                 values = (rule.rule_id, rule.name, str(target), rule.source_kind, "Yes" if rule.enabled else "No")
                 for column, value in enumerate(values):

@@ -60,7 +60,7 @@ test = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src", "."]
 cache_dir = ".pytest_cache"
 asyncio_mode = "auto"
 
