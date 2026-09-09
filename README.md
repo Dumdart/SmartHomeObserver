@@ -89,7 +89,7 @@ Only the active broker is continuously connected. Check freshness, provenance, t
 Desktop starts with a simplified workspace. **View → Advanced mode** restores
 snapshot diagnostics, storage administration, diagnostic profiles and specialist
 fields. History and recording remain available in both modes. This saved GUI
-preference does not change broker operations or MCP authorization; see the
+preference does not change broker operations or MCP authorization; see the 
 [desktop mode matrix](docs/DESKTOP_UX.md#simplified-and-advanced-mode).
 
 ## Health expectations
