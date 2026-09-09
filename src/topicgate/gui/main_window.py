@@ -472,6 +472,10 @@ class MainWindow(QMainWindow):
         self._health_action.setShortcut("Ctrl+Shift+H")
         self._health_action.triggered.connect(self._show_health)
 
+        self._history_action = QAction("History", self)
+        self._history_action.setObjectName("historyAction")
+        self._history_action.triggered.connect(self._show_history)
+
         self._diagnostic_profiles_action = QAction("Diagnostic profiles...", self)
         self._diagnostic_profiles_action.setObjectName("diagnosticProfilesAction")
         self._diagnostic_profiles_action.setEnabled(
@@ -525,6 +529,7 @@ class MainWindow(QMainWindow):
         self._view_menu.addAction(self._advanced_mode_action)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._health_action)
+        self._view_menu.addAction(self._history_action)
         self._view_menu.addAction(self._diagnostic_profiles_action)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._expand_action)

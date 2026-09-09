@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QSplitter,
     QSpinBox,
@@ -248,6 +249,28 @@ def test_health_action_opens_broker_scoped_inspector() -> None:
     application.processEvents()
 
 
+def test_history_action_opens_event_history() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    window = MainWindow(
+        MainViewModel(runtime_for(repository), repository.state.topic)
+    )
+
+    action = window.findChild(QAction, "historyAction")
+    assert action is not None
+    assert action.text() == "History"
+    assert action in window._view_menu.actions()
+
+    action.trigger()
+    application.processEvents()
+
+    stack = window.findChild(QStackedWidget, "inspectorStack")
+    assert stack.currentIndex() == 2
+    assert stack.currentWidget().widget() is window._event_history
+    window.close()
+    application.processEvents()
+
+
 def test_settings_health_and_observation_tabs_reuse_visible_topic_tab_style() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
@@ -383,7 +406,8 @@ def test_observer_filter_explains_subscription_rows_and_hidden_values(tmp_path) 
     window = MainWindow(vm, QSettings(str(tmp_path / "gui.ini"), QSettings.Format.IniFormat))
     vm.apply_snapshot_query(SnapshotQuery(topic_filter="elsewhere/#"))
     pane = window._observer_tree
-    assert "0 values" in pane._scope.text()
+    assert "subscriptions" not in pane._scope.text()
+    assert "0 values" not in pane._scope.text()
     assert "Subscription rows remain visible" in pane._empty_state_text.text()
     assert "excluded from snapshot values and counts" in vm.topic_detail.snapshot_scope_note
     assert any(item.text().startswith("Subscription:") for item in pane._items.values())
@@ -1199,7 +1223,7 @@ def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> Non
     editor = window.findChild(QLineEdit, "expectationName")
     editor.setText("Unfinished rule")
 
-    window.findChild(QToolButton, "brokerHealthSummary").click()
+    window.findChild(QPushButton, "brokerHealthSummary").click()
 
     assert stack.currentWidget() is window._health_inspector
     assert window._view_model.topic == repository.state.topic
@@ -1383,7 +1407,7 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
 
     assert health_query.get_health_report.called
     assert "Failed" in window.findChild(
-        QToolButton, "brokerHealthSummary"
+        QPushButton, "brokerHealthSummary"
     ).text()
     assert window._inspector_stack.currentWidget() is window._topic_details
     window.close()
@@ -2163,7 +2187,7 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     window = MainWindow(view_model)
     selector = window.findChild(QComboBox, "connectionBrokerSelector")
     lifecycle = window.findChild(QPushButton, "brokerLifecycleButton")
-    health = window.findChild(QToolButton, "brokerHealthSummary")
+    health = window.findChild(QPushButton, "brokerHealthSummary")
     management = window.findChild(QToolButton, "manageBrokersButton")
     profile_menu = window.findChild(QMenu, "brokerProfileSelectorMenu")
 
@@ -2186,9 +2210,23 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     assert management.isVisible()
     assert lifecycle.isVisible()
     assert lifecycle.text() == "Disconnect"
-    assert selector.geometry().top() == management.geometry().top()
-    assert health.geometry().top() == lifecycle.geometry().top()
-    assert selector.geometry().top() < lifecycle.geometry().top()
+    assert lifecycle.property("primary") is False
+    assert (
+        selector.geometry().top()
+        == management.geometry().top()
+        == lifecycle.geometry().top()
+    )
+    assert health.geometry().top() > selector.geometry().top()
+    assert health.geometry().left() == selector.geometry().left()
+    assert health.geometry().right() == lifecycle.geometry().right()
+    assert (
+        selector.sizePolicy().horizontalPolicy()
+        == QSizePolicy.Policy.Expanding
+    )
+    assert (
+        management.sizePolicy().horizontalPolicy()
+        == QSizePolicy.Policy.Fixed
+    )
     assert [
         action.defaultWidget()
         .findChild(QToolButton, "selectBrokerProfileButton")
@@ -2257,6 +2295,7 @@ def test_broker_pane_lifecycle_button_connects_or_disconnects() -> None:
     view_model._connection_status = "disconnected"
     pane.render(view_model)
     assert lifecycle.text() == "Connect"
+    assert lifecycle.property("primary") is True
     lifecycle.click()
 
     assert requests == ["disconnect", "connect"]

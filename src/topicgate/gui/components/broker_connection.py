@@ -215,7 +215,6 @@ class BrokerConnectionPane(WorkspacePane):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.setMaximumHeight(112)
         self._status = "disconnected"
 
         self._status_badge = QLabel("Disconnected")
@@ -230,21 +229,31 @@ class BrokerConnectionPane(WorkspacePane):
         self.header_layout.addWidget(self._status_badge)
         self.header_layout.addStretch(1)
         self._manage_button = QToolButton()
-        self._manage_button.setText("Profiles...")
+        self._manage_button.setText("Profiles…")
         self._manage_button.setAccessibleName("Manage broker profiles")
         self._manage_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._manage_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
         self._manage_button.setObjectName("manageBrokersButton")
         self._manage_button.clicked.connect(lambda: self._profile_selector.showPopup())
 
         broker_grid = QGridLayout()
-        broker_grid.setSpacing(8)
+        broker_grid.setHorizontalSpacing(8)
+        broker_grid.setVerticalSpacing(6)
         broker_grid.setColumnStretch(0, 1)
         broker_grid.setColumnStretch(1, 0)
+        broker_grid.setColumnStretch(2, 0)
         self._profile_selector = BrokerProfileSelector()
         self._profile_selector.setObjectName("connectionBrokerSelector")
         self._profile_selector.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._profile_selector.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self._profile_selector.setAccessibleName("Active broker profile")
-        self._profile_selector.setMinimumWidth(160)
+        self._profile_selector.setMinimumWidth(80)
         self._profile_selector.currentIndexChanged.connect(
             self._select_profile
         )
@@ -261,20 +270,27 @@ class BrokerConnectionPane(WorkspacePane):
         self._lifecycle_button = QPushButton("Connect")
         self._lifecycle_button.setObjectName("brokerLifecycleButton")
         self._lifecycle_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._lifecycle_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
         self._lifecycle_button.setProperty("primary", True)
         self._lifecycle_button.clicked.connect(self._request_lifecycle_operation)
 
-        self._health_button = QToolButton()
+        self._health_button = QPushButton()
         self._health_button.setText("Health: Not evaluated")
-        self._health_button.setAutoRaise(True)
         self._health_button.setObjectName("brokerHealthSummary")
         self._health_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._health_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self._health_button.setAccessibleName("Inspect broker health")
         self._health_button.clicked.connect(self.health_requested.emit)
         broker_grid.addWidget(self._profile_selector, 0, 0)
         broker_grid.addWidget(self._manage_button, 0, 1)
-        broker_grid.addWidget(self._lifecycle_button, 1, 1)
-        broker_grid.addWidget(self._health_button, 1, 0)
+        broker_grid.addWidget(self._lifecycle_button, 0, 2)
+        broker_grid.addWidget(self._health_button, 1, 0, 1, 3)
         self.content_layout.addLayout(broker_grid)
         self.setMaximumHeight(152)
 
@@ -304,6 +320,12 @@ class BrokerConnectionPane(WorkspacePane):
         lifecycle_text, lifecycle_enabled = self._lifecycle_presentation(busy)
         self._lifecycle_button.setText(lifecycle_text)
         self._lifecycle_button.setEnabled(lifecycle_enabled)
+        self._lifecycle_button.setProperty(
+            "primary",
+            self._status in {"disconnected", "connecting"},
+        )
+        self._lifecycle_button.style().unpolish(self._lifecycle_button)
+        self._lifecycle_button.style().polish(self._lifecycle_button)
         health = view_model.health_summary
         counts = self._compact_health_counts(health.label, health.counts)
         suffix = f" · {counts}" if counts else ""

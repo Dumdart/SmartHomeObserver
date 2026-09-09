@@ -201,16 +201,9 @@ class ObserverTreePane(WorkspacePane):
         self, query: SnapshotQuery, snapshot: BrokerSnapshot, subscription_count: int,
     ) -> None:
         self._scope_context = (query, snapshot, subscription_count)
-        stored = sum(item.source.value == "stored" for item in snapshot.topics)
         age = "Unlimited" if query.max_age_seconds is None else f"{query.max_age_seconds:g} seconds"
-        self._scope.setText(
-            f"{subscription_count} subscriptions · {len(snapshot.topics)} snapshot values "
-            f"({stored} previously stored).\n"
-            f"Display: {query.topic_filter} · Maximum age: {age} · "
-            f"Up to {query.result_limit} values. Live means received this session, not necessarily recent."
-        )
+        bounds = []
         if not self._advanced_mode:
-            bounds = []
             if query.topic_filter != "#":
                 bounds.append(f"filter {query.topic_filter}")
             if query.max_age_seconds is not None:
@@ -219,10 +212,12 @@ class ObserverTreePane(WorkspacePane):
                 bounds.append(f"up to {query.result_limit} values")
             if query.payload_limit_bytes != SnapshotQuery().payload_limit_bytes:
                 bounds.append(f"payload preview {query.payload_limit_bytes} bytes")
-            self._scope.setText(
-                f"{subscription_count} subscriptions · {len(snapshot.topics)} values ({stored} stored)."
-                + ("\nView limits active: " + ", ".join(bounds) + ". Edit in View > Advanced mode." if bounds else "")
-            )
+        self._scope.setText(
+            "View limits active: " + ", ".join(bounds) + ". Edit in View > Advanced mode."
+            if bounds
+            else ""
+        )
+        self._scope.setVisible(bool(bounds))
         self._render_search_status()
 
     def set_advanced_mode(self, advanced: bool) -> None:
