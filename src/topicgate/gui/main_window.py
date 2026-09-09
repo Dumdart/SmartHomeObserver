@@ -1211,7 +1211,10 @@ class MainWindow(QMainWindow):
             await self._view_model.activate_broker_profile(profile_id, mqtt_config)
         finally:
             if self._view_model.active_broker_profile.id != previous_profile_id:
-                self._show_snapshot()
+                if self._advanced_mode:
+                    self._show_snapshot()
+                else:
+                    self._show_health()
             self._render_connection_controls()
 
     def _confirm_delete_broker_profile(

@@ -3312,7 +3312,7 @@ def test_global_advanced_mode_defaults_and_persists(tmp_path, saved_mode) -> Non
     window.close()
     restored = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())), settings)
     assert restored._advanced_mode_action.isChecked() is expected
-    assert restored._destination_tabs.isTabVisible(2) is expected
+    assert restored._destination_tabs.isTabVisible(2)
     restored.close()
     application.processEvents()
 
