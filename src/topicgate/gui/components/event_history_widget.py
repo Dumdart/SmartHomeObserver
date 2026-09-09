@@ -150,7 +150,11 @@ class EventHistoryWidget(WorkspacePane):
         self.render_recording()
 
     def _recording_loaded(self) -> None:
-        if self._view_model.history_settings_broker == self.broker.currentData():
+        broker_id = self.broker.currentData()
+        if (
+            self._view_model.history_recording_status_for(broker_id) is not None
+            or self._view_model.history_settings_error_for(broker_id) is not None
+        ):
             self._recording_loading = False
             self._recording_pending = False
         self.render_recording()
@@ -163,10 +167,10 @@ class EventHistoryWidget(WorkspacePane):
     def render_recording(self) -> None:
         vm = self._view_model
         broker = self.broker.currentData()
-        status = vm.history_recording_status
-        known = vm.history_settings_broker == broker and status is not None and status.broker_id == broker
+        status = vm.history_recording_status_for(broker)
+        known = status is not None and status.broker_id == broker
         busy = vm.is_busy("history-settings") or self._recording_pending
-        error = vm.history_settings_error if vm.history_settings_broker == broker else None
+        error = vm.history_settings_error_for(broker)
         self.enable_recording.setEnabled(known and not busy and not error and not self._recording_loading)
         self.enable_recording.setChecked(bool(known and status.enabled))
         self.reload_recording.setVisible(bool(error) or not known or self._recording_loading)

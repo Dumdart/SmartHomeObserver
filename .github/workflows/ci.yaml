@@ -38,4 +38,4 @@ jobs:
       - name: Verify Codex plugin bundle
         run: .venv/bin/python -m pytest tests/test_plugin_bundle.py -q
       - name: Run tests
-        run: .venv/bin/python -m pytest -q
+        run: .venv/bin/python -m pytest -n 4 --dist loadfile -q

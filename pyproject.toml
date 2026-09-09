@@ -55,6 +55,7 @@ apps = [
 test = [
     "keyrings.alt",
     "pytest",
+    "pytest-xdist",
     "pytest-asyncio",
 ]
 

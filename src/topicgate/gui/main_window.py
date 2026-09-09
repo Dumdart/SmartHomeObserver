@@ -308,10 +308,6 @@ class MainWindow(QMainWindow):
         )
 
     def _show_snapshot(self) -> None:
-        if not self._advanced_mode:
-            self._inspector_stack.setCurrentWidget(self._health_inspector)
-            self._context_panel.setHidden(True)
-            return
         self._inspector_stack.setCurrentIndex(0)
         self._context_panel.setHidden(True)
 
@@ -604,8 +600,8 @@ class MainWindow(QMainWindow):
     def _apply_advanced_mode(self) -> None:
         advanced = self._advanced_mode
         self._destination_tabs.blockSignals(True)
-        self._destination_tabs.setTabVisible(2, advanced)
-        self._destination_tabs.setTabEnabled(2, advanced)
+        self._destination_tabs.setTabVisible(2, True)
+        self._destination_tabs.setTabEnabled(2, True)
         self._destination_tabs.blockSignals(False)
         if not advanced and self._inspector_stack.currentIndex() == 0:
             self._show_snapshot()
