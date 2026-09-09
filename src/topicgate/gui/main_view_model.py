@@ -136,11 +136,13 @@ class MainViewModel(QObject):
         self._runtime = runtime
         self.history_policy: HistoryRetentionPolicy | None = None
         self.history_recording_status: HistoryRecordingStatus | None = None
+        self._history_recording_statuses: dict[UUID, HistoryRecordingStatus] = {}
+        self._history_settings_errors: dict[UUID, str] = {}
         self.history_usage: HistoryUsage | None = None
         self.history_settings_broker: UUID | None = None
         self.history_settings_error: str | None = None
         self.history_settings_feedback = ""
-        self._history_settings_generation = 0
+        self._history_settings_generations: dict[UUID, int] = {}
         self.event_history_result: TopicHistoryResult | None = None
         self.event_history_error: str | None = None
         self.event_history_busy = False
@@ -951,8 +953,8 @@ class MainViewModel(QObject):
 
     async def load_history_settings(self, broker_id: UUID) -> None:
         self.history_settings_feedback = ""
-        self._history_settings_generation += 1
-        generation = self._history_settings_generation
+        generation = self._history_settings_generations.get(broker_id, 0) + 1
+        self._history_settings_generations[broker_id] = generation
         try:
             policy, status, usage = await asyncio.gather(
                 asyncio.to_thread(self._runtime.get_history_retention_policy),
@@ -960,18 +962,30 @@ class MainViewModel(QObject):
                 asyncio.to_thread(self._runtime.get_history_usage, broker_id),
             )
         except Exception:
-            if generation == self._history_settings_generation:
+            if generation == self._history_settings_generations[broker_id]:
                 self.history_settings_broker = broker_id
                 self.history_settings_error = "History settings could not be loaded. Reload to retry."
                 self.history_policy = None
+                self._history_settings_errors[broker_id] = self.history_settings_error
                 self.history_settings_changed.emit()
             return
-        if generation != self._history_settings_generation:
+        if generation != self._history_settings_generations[broker_id]:
             return
         self.history_settings_broker = broker_id
         self.history_policy, self.history_recording_status, self.history_usage = policy, status, usage
         self.history_settings_error = None
+        self._history_recording_statuses[broker_id] = status
+        self._history_settings_errors.pop(broker_id, None)
         self.history_settings_changed.emit()
+
+    def history_recording_status_for(
+        self,
+        broker_id: UUID,
+    ) -> HistoryRecordingStatus | None:
+        return self._history_recording_statuses.get(broker_id)
+
+    def history_settings_error_for(self, broker_id: UUID) -> str | None:
+        return self._history_settings_errors.get(broker_id)
 
     async def set_history_recording(self, broker_id: UUID, enabled: bool) -> None:
         """Record future receipts without changing retention limits."""
@@ -981,6 +995,7 @@ class MainViewModel(QObject):
             except Exception:
                 self.history_settings_broker = broker_id
                 self.history_settings_error = "Recording could not be changed. Reload status to retry."
+                self._history_settings_errors[broker_id] = self.history_settings_error
                 self.history_settings_changed.emit()
                 return
             await self.load_history_settings(broker_id)

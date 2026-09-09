@@ -3312,7 +3312,7 @@ def test_global_advanced_mode_defaults_and_persists(tmp_path, saved_mode) -> Non
     window.close()
     restored = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())), settings)
     assert restored._advanced_mode_action.isChecked() is expected
-    assert restored._destination_tabs.isTabVisible(2) is expected
+    assert restored._destination_tabs.isTabVisible(2)
     restored.close()
     application.processEvents()
 
@@ -3329,8 +3329,8 @@ def test_global_mode_visibility_fallback_and_stale_routes() -> None:
     for advanced in (False, True, False):
         window._advanced_mode_action.setChecked(advanced)
         assert window._advanced_mode is advanced
-        assert window._destination_tabs.isTabVisible(2) is advanced
-        assert window._destination_tabs.isTabEnabled(2) is advanced
+        assert window._destination_tabs.isTabVisible(2)
+        assert window._destination_tabs.isTabEnabled(2)
         for action in (window._stored_observations_action, window._console_action,
                        window._diagnostic_profiles_action):
             assert action.isVisible() is advanced
@@ -3363,7 +3363,8 @@ def test_global_mode_visibility_fallback_and_stale_routes() -> None:
             window._diagnostic_profiles_action.trigger()
             window._console_action.trigger()
             window._navigate(2)
-            assert window._inspector_stack.currentWidget() is window._health_inspector
+            assert window._inspector_stack.currentWidget() is not window._health_inspector
+            assert window._inspector_stack.currentIndex() == 0
             assert window._stored_observations_dialog is None
             assert window._diagnostic_profile_editor_window is None
             assert not window._log_dock.isVisible()

@@ -18,7 +18,7 @@ are ignored. There are no local Advanced toggles.
 | History | Recording status/control, broker/topic/time filters, pagination, payload and truncation warnings | Adds page size, byte columns, receipt provenance and counters | Recording and message browsing remain core tasks. |
 | Health | Overview, actionable checks, expectation conditions and failure history | Adds Changes, failure occurrence counts and history deletion | Understand and resolve failures without diagnostic administration. |
 | Expectations | Name, condition, required values/encoding, enabled state, save/delete | Adds action settings, description and revision details | All condition types remain usable, including existing binary rules. Nondefault action settings are summarized and preserved on save. |
-| Snapshot | Compact notice of configured bounds and essential empty-state recovery actions | Full Snapshot destination, filters, rendering bounds and diagnostics | Existing view limits stay active and visible as a summary. |
+| Snapshot | Snapshot destination with configured bounds and essential recovery actions | Adds detailed diagnostics | Existing view limits stay active and visible as a summary. |
 | Storage and profiles | Specialist destinations hidden | Stored observations, cache administration, retention/pruning and Diagnostic profiles | Keep administration out of everyday navigation. |
 | Help | Broker recovery, MCP setup, support export and About | Also includes log console | Setup and support stay available in both modes. |
 
@@ -27,8 +27,9 @@ boundary**. Switching never connects or disconnects, publishes, changes recordin
 expectations or retention, or deletes data. Existing configurations remain active.
 History recording is changed only through the explicit **Record messages** action.
 
-The setting updates existing panes and subsequent navigation. Snapshot falls back
-to Health; Health → Changes falls back to Overview. Broker/topic context, history
+The setting updates existing panes and subsequent navigation. Snapshot remains
+available in both modes so its configured bounds can be inspected or reset and
+**Reconnect & observe** remains reachable; Health → Changes falls back to Overview. Broker/topic context, history
 filters/results and unsent publish text remain intact. Specialist menu actions,
 shortcuts and the log dock's context-menu action are unavailable in simplified mode.
 

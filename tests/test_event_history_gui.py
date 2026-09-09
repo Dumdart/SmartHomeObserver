@@ -321,6 +321,48 @@ async def test_late_recording_status_cannot_enable_controls_for_another_broker()
         app.processEvents()
 
 
+async def test_recording_status_loads_complete_independently_per_broker():
+    app = QApplication.instance() or QApplication([])
+    runtime = runtime_for(FakeGuiRepository())
+    vm = MainViewModel(runtime)
+    workspace = EventHistoryWidget(vm)
+    other = EventHistoryWidget(vm)
+    first = workspace.broker.currentData()
+    other.broker.setCurrentIndex(1)
+    second = other.broker.currentData()
+    started, release = Event(), Event()
+
+    def read_status(broker):
+        if broker == first:
+            started.set()
+            assert release.wait(5)
+        return HistoryRecordingStatus(broker, enabled=broker == first)
+
+    runtime.get_history_recording_status = Mock(side_effect=read_status)
+    runtime.get_history_retention_policy = Mock(return_value=HistoryRetentionPolicy())
+    runtime.get_history_usage = Mock(
+        side_effect=lambda broker: HistoryUsage(broker, 0, 0, None, None, 0)
+    )
+    task = asyncio.create_task(vm.load_history_settings(first))
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        await vm.load_history_settings(second)
+        assert not workspace._recording_loading
+        assert not workspace.enable_recording.isEnabled()
+        assert other.enable_recording.isEnabled()
+        release.set()
+        await task
+        assert workspace.enable_recording.isEnabled()
+        assert workspace.enable_recording.isChecked()
+        assert not other.enable_recording.isChecked()
+    finally:
+        release.set()
+        await task
+        workspace.close()
+        other.close()
+        app.processEvents()
+
+
 def test_history_mode_switch_preserves_page_selection_and_payload():
     app = QApplication.instance() or QApplication([])
     vm = MainViewModel(runtime_for(FakeGuiRepository()))

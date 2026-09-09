@@ -308,10 +308,6 @@ class MainWindow(QMainWindow):
         )
 
     def _show_snapshot(self) -> None:
-        if not self._advanced_mode:
-            self._inspector_stack.setCurrentWidget(self._health_inspector)
-            self._context_panel.setHidden(True)
-            return
         self._inspector_stack.setCurrentIndex(0)
         self._context_panel.setHidden(True)
 
@@ -604,8 +600,8 @@ class MainWindow(QMainWindow):
     def _apply_advanced_mode(self) -> None:
         advanced = self._advanced_mode
         self._destination_tabs.blockSignals(True)
-        self._destination_tabs.setTabVisible(2, advanced)
-        self._destination_tabs.setTabEnabled(2, advanced)
+        self._destination_tabs.setTabVisible(2, True)
+        self._destination_tabs.setTabEnabled(2, True)
         self._destination_tabs.blockSignals(False)
         if not advanced and self._inspector_stack.currentIndex() == 0:
             self._show_snapshot()
@@ -1215,7 +1211,10 @@ class MainWindow(QMainWindow):
             await self._view_model.activate_broker_profile(profile_id, mqtt_config)
         finally:
             if self._view_model.active_broker_profile.id != previous_profile_id:
-                self._show_snapshot()
+                if self._advanced_mode:
+                    self._show_snapshot()
+                else:
+                    self._show_health()
             self._render_connection_controls()
 
     def _confirm_delete_broker_profile(
