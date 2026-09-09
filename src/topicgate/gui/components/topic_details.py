@@ -77,11 +77,6 @@ class TopicDetailsPane(WorkspacePane):
         mode_layout.addWidget(self._mode_tabs, 1)
         mode_layout.addWidget(self._edit_button)
         self.content_layout.addLayout(mode_layout)
-        self._expectations_button = QPushButton("Expectations")
-        self._expectations_button.setObjectName("topicExpectationsButton")
-        self._expectations_button.clicked.connect(self.expectations_requested.emit)
-        mode_layout.addWidget(self._expectations_button)
-
         self._payload_content = QWidget()
         self._payload_content.setObjectName("topicPayloadContent")
         payload_layout = QVBoxLayout(self._payload_content)
@@ -185,7 +180,6 @@ class TopicDetailsPane(WorkspacePane):
         summary = view_model.selected_wildcard_filter_summary
         showing_filter = summary is not None
         selected_path = view_model.topic
-        self._expectations_button.setEnabled(bool(selected_path) and not showing_filter)
         heading = selected_path or "No topic selected"
         if not selected_path:
             accessible_name = "No topic selected"

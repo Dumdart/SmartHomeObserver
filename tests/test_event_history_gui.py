@@ -8,8 +8,9 @@ from topicgate.app.services.history_retention_service import HistoryRetentionSer
 from topicgate.app.services.topic_history_service import TopicHistoryService
 from topicgate.core.models.history_recording import HistoryRecordingStatus
 from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
-from topicgate.gui.components.stored_observations_dialog import StoredObservationsDialog
 from topicgate.gui.components.event_history_widget import EventHistoryWidget
+from topicgate.gui.components.stored_observations_dialog import StoredObservationsDialog
+from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.gui.main_view_model import MainViewModel
 from test_gui import FakeGuiRepository, runtime_for
 from test_observation_history_repository import event
@@ -25,6 +26,19 @@ def make_page(broker):
     retention.usage.return_value = HistoryUsage(broker, 2, 18, event(broker).received_at, None, 0)
     return TopicHistoryService(reader, HistoryRetentionService(retention),
                                lambda owner: HistoryRecordingStatus(owner, dropped=2)).query(broker, "#", limit=1)
+
+
+def test_event_history_reuses_the_workspace_pane_design():
+    app = QApplication.instance() or QApplication([])
+    widget = EventHistoryWidget(MainViewModel(runtime_for(FakeGuiRepository())))
+
+    assert isinstance(widget, WorkspacePane)
+    assert widget.property("workspacePane") is True
+    assert widget.heading.text() == "Message history"
+    assert widget.header_layout.indexOf(widget.heading) == 0
+
+    widget.close()
+    app.processEvents()
 
 
 def test_event_page_separates_latest_state_and_resets_cursor_on_edits():

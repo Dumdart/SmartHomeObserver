@@ -408,7 +408,7 @@ def test_observer_filter_explains_subscription_rows_and_hidden_values(tmp_path) 
     pane = window._observer_tree
     assert "subscriptions" not in pane._scope.text()
     assert "0 values" not in pane._scope.text()
-    assert "Subscription rows remain visible" in pane._empty_state_text.text()
+    assert pane._empty_state_text.text() == "No observed values match the current snapshot filters."
     assert "excluded from snapshot values and counts" in vm.topic_detail.snapshot_scope_note
     assert any(item.text().startswith("Subscription:") for item in pane._items.values())
     pane._search_edit.setText("does-not-exist")
@@ -796,6 +796,7 @@ def test_settings_button_reveals_subscription_and_expectation_settings() -> None
 
     assert context is not None
     assert edit_button is not None
+    assert window.findChild(QPushButton, "topicExpectationsButton") is None
     assert context.isHidden()
     assert edit_button.text() == "Settings"
     assert not edit_button.icon().isNull()
@@ -808,6 +809,13 @@ def test_settings_button_reveals_subscription_and_expectation_settings() -> None
 
     assert not context.isHidden()
     assert edit_button.text() == "Close settings"
+    assert len(
+        [
+            button
+            for button in window.findChildren(QPushButton)
+            if button.text() == "Close settings"
+        ]
+    ) == 0
     assert context.findChild(QWidget, "topicExpectationEditor") is not None
     assert context.findChild(QWidget, "topicPublishPane") is None
     assert context.findChild(QPushButton, "revertSubscriptionButton") is None
@@ -1739,9 +1747,9 @@ def test_observer_empty_states_explain_recovery_actions() -> None:
 
     pane.render_empty_state("connected", (Subscription("devices/#"),), True, False, False)
     action = pane.findChild(QToolButton, "observerEmptyStateAction")
-    assert "current snapshot filters" in pane.findChild(
-        QLabel, "observerEmptyStateText"
-    ).text()
+    assert pane.findChild(QLabel, "observerEmptyStateText").text() == (
+        "No observed values match the current snapshot filters."
+    )
     assert action.text() == "Clear filters"
     pane.deleteLater()
     application.processEvents()
@@ -3467,8 +3475,8 @@ def test_mode_switch_preserves_basic_drafts_and_existing_configuration() -> None
     assert window._subscription_settings._retain_handling.currentIndex() == 2
     assert window._subscription_settings._retain_as_published.isChecked()
     assert "Do not send retained messages" in window._subscription_settings._options_summary.text()
-    assert "payload preview 256 bytes" in window._observer_tree._scope.text()
-    assert "age up to 12" in window._observer_tree._scope.text()
+    assert window._observer_tree._scope.isHidden()
+    assert window._observer_tree._scope.text() == ""
     dialog.close()
     window.close()
     application.processEvents()

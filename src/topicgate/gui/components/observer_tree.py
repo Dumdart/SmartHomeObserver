@@ -55,7 +55,7 @@ class ObserverTreePane(WorkspacePane):
         self._scope.setObjectName("observerDisplayScope")
         self._scope.setTextFormat(Qt.TextFormat.PlainText)
         self._scope.setWordWrap(True)
-        self.content_layout.addWidget(self._scope)
+        self._scope.setVisible(False)
         self._search_status = QLabel()
         self._search_status.setObjectName("observerSearchStatus")
         self._search_status.setWordWrap(True)
@@ -179,7 +179,7 @@ class ObserverTreePane(WorkspacePane):
             )
         elif query_is_filtered and not has_topics:
             message, action, label = (
-                "No observed values match the current snapshot filters. Subscription rows remain visible. Clear display filters to inspect available values.",
+                "No observed values match the current snapshot filters.",
                 "clear-filters",
                 "Clear filters",
             )
@@ -201,23 +201,8 @@ class ObserverTreePane(WorkspacePane):
         self, query: SnapshotQuery, snapshot: BrokerSnapshot, subscription_count: int,
     ) -> None:
         self._scope_context = (query, snapshot, subscription_count)
-        age = "Unlimited" if query.max_age_seconds is None else f"{query.max_age_seconds:g} seconds"
-        bounds = []
-        if not self._advanced_mode:
-            if query.topic_filter != "#":
-                bounds.append(f"filter {query.topic_filter}")
-            if query.max_age_seconds is not None:
-                bounds.append(f"age up to {age}")
-            if query.result_limit != SnapshotQuery().result_limit or snapshot.results.omitted:
-                bounds.append(f"up to {query.result_limit} values")
-            if query.payload_limit_bytes != SnapshotQuery().payload_limit_bytes:
-                bounds.append(f"payload preview {query.payload_limit_bytes} bytes")
-        self._scope.setText(
-            "View limits active: " + ", ".join(bounds) + ". Edit in View > Advanced mode."
-            if bounds
-            else ""
-        )
-        self._scope.setVisible(bool(bounds))
+        self._scope.clear()
+        self._scope.setVisible(False)
         self._render_search_status()
 
     def set_advanced_mode(self, advanced: bool) -> None:

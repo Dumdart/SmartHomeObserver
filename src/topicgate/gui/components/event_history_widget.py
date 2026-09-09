@@ -7,28 +7,29 @@ from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDateTimeEdit, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QTableWidgetItem, QWidget,
 )
+
+from topicgate.gui.components.workspace_pane import WorkspacePane
 
 if TYPE_CHECKING:
     from topicgate.gui.main_view_model import MainViewModel
 
 
-class EventHistoryWidget(QWidget):
+class EventHistoryWidget(WorkspacePane):
     query_requested = Signal(object, str, object, object, object, int)
     recording_status_requested = Signal(object)
     recording_requested = Signal(object, bool)
 
     def __init__(self, view_model: MainViewModel, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__("Message history", minimum_hint_width=320)
+        if parent is not None:
+            self.setParent(parent)
         self._view_model = view_model
         self._advanced_mode = True
         self._recording_pending = False
         self._recording_loading = False
-        layout = QVBoxLayout(self)
-        heading = QLabel("Message history")
-        heading.setObjectName("workspaceHeading")
-        layout.addWidget(heading)
+        layout = self.content_layout
         self.setToolTip(
             "Message receipts saved while recording was enabled, oldest first. "
             "Earlier gaps cannot be recovered. Health failure history and latest stored values are separate."

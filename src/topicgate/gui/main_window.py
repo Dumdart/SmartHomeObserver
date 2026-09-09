@@ -266,9 +266,6 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self._splitter.setSizes([330, 580, 330])
         self._context_panel.setHidden(True)
-        close_settings = QPushButton("Close settings")
-        close_settings.clicked.connect(lambda: self._topic_details.set_settings_visible(False))
-        self._context_panel.header_layout.addWidget(close_settings)
         self._render_destination()
 
     def _render_destination(self) -> None:
