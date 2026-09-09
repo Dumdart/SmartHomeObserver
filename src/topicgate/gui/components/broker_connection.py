@@ -199,7 +199,6 @@ class BrokerConnectionPane(WorkspacePane):
     connect_requested = Signal()
     reconnect_requested = Signal()
     disconnect_requested = Signal()
-    inspect_snapshot_requested = Signal()
     health_requested = Signal()
 
     _STATUS_LABELS = {
@@ -230,6 +229,12 @@ class BrokerConnectionPane(WorkspacePane):
         self.header_layout.setStretch(0, 0)
         self.header_layout.addWidget(self._status_badge)
         self.header_layout.addStretch(1)
+        self._manage_button = QToolButton()
+        self._manage_button.setText("Profiles...")
+        self._manage_button.setAccessibleName("Manage broker profiles")
+        self._manage_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._manage_button.setObjectName("manageBrokersButton")
+        self._manage_button.clicked.connect(lambda: self._profile_selector.showPopup())
 
         broker_grid = QGridLayout()
         broker_grid.setSpacing(8)
@@ -253,29 +258,23 @@ class BrokerConnectionPane(WorkspacePane):
             self.add_profile_requested.emit
         )
 
-        self._inspect_snapshot_button = QPushButton("Inspect snapshot")
-        self._inspect_snapshot_button.setObjectName("inspectSnapshotButton")
-        self._inspect_snapshot_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
-        self._inspect_snapshot_button.setAccessibleName("Inspect broker snapshot")
-        self._inspect_snapshot_button.clicked.connect(
-            self.inspect_snapshot_requested.emit
-        )
-
         self._lifecycle_button = QPushButton("Connect")
         self._lifecycle_button.setObjectName("brokerLifecycleButton")
         self._lifecycle_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._lifecycle_button.setProperty("primary", True)
         self._lifecycle_button.clicked.connect(self._request_lifecycle_operation)
 
-        self._health_button = QPushButton("Health: Not evaluated")
+        self._health_button = QToolButton()
+        self._health_button.setText("Health: Not evaluated")
+        self._health_button.setAutoRaise(True)
         self._health_button.setObjectName("brokerHealthSummary")
         self._health_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._health_button.setAccessibleName("Inspect broker health")
         self._health_button.clicked.connect(self.health_requested.emit)
         broker_grid.addWidget(self._profile_selector, 0, 0)
-        broker_grid.addWidget(self._lifecycle_button, 0, 1)
+        broker_grid.addWidget(self._manage_button, 0, 1)
+        broker_grid.addWidget(self._lifecycle_button, 1, 1)
         broker_grid.addWidget(self._health_button, 1, 0)
-        broker_grid.addWidget(self._inspect_snapshot_button, 1, 1)
         self.content_layout.addLayout(broker_grid)
         self.setMaximumHeight(152)
 
@@ -301,6 +300,7 @@ class BrokerConnectionPane(WorkspacePane):
             management_enabled,
         )
         self._profile_selector.setEnabled(management_enabled)
+        self._manage_button.setEnabled(management_enabled)
         lifecycle_text, lifecycle_enabled = self._lifecycle_presentation(busy)
         self._lifecycle_button.setText(lifecycle_text)
         self._lifecycle_button.setEnabled(lifecycle_enabled)

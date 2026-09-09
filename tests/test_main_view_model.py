@@ -1249,7 +1249,7 @@ def test_exact_topic_detail_survives_active_snapshot_topic_filter() -> None:
     assert view_model.topic_paths == [topic]
     assert view_model.topic_detail.decoded_payload == "online"
     assert view_model.topic_detail.snapshot_scope_note == (
-        "Current value available, but omitted from the observer tree because "
+        "Current value available, but excluded from snapshot values and counts because "
         "the active topic filter 'other/#' excludes it."
     )
 
@@ -1269,7 +1269,7 @@ def test_exact_topic_detail_survives_snapshot_result_limit() -> None:
     ]
     assert view_model.topic_detail.decoded_payload == "online"
     assert view_model.topic_detail.snapshot_scope_note == (
-        "Current value available, but omitted from the observer tree because "
+        "Current value available, but excluded from snapshot values and counts because "
         "it is beyond the active result limit."
     )
 

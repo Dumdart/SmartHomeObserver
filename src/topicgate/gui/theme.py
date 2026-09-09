@@ -3,6 +3,9 @@ from PySide6.QtWidgets import QApplication
 
 
 LIGHT_THEME = """
+QTabBar#workspaceDestinations::tab { padding: 7px 10px; color: #4b5563; border-bottom: 2px solid transparent; }
+QTabBar#workspaceDestinations::tab:selected { color: #202124; border-bottom: 2px solid #405f78; font-weight: bold; }
+QTabBar#workspaceDestinations::tab:disabled { color: #89939f; }
 QWidget { color: #202124; font-size: 13px; }
 QMainWindow, QDialog, QMessageBox, QWidget#applicationRoot { background: #f3f4f6; color: #202124; }
 QMessageBox QLabel { background: transparent; color: #202124; }
@@ -36,13 +39,13 @@ QLabel#brokerConnectionStatus { border-radius: 9px; padding: 3px 9px; font-weigh
 QLabel#brokerConnectionStatus[connectionState="connected"] { color: #11653f; background: #dcf7e9; }
 QLabel#brokerConnectionStatus[connectionState="connecting"], QLabel#brokerConnectionStatus[connectionState="reconnecting"] { color: #8a4b00; background: #fff0d5; }
 QLabel#brokerConnectionStatus[connectionState="disconnected"] { color: #4b5563; background: #e9edf1; }
-QPushButton#brokerHealthSummary, QPushButton#topicHealthBadge { text-align: left; font-weight: 650; padding: 3px 8px; }
+QToolButton#brokerHealthSummary, QPushButton#topicHealthBadge { text-align: left; font-weight: 650; padding: 3px 8px; }
 QPushButton#topicHealthBadge { border-radius: 9px; font-size: 11px; }
-QPushButton#brokerHealthSummary { color: #4b5563; background: #fbfcfd; border-color: #c8ced6; }
-QPushButton#brokerHealthSummary[healthTone="success"] { color: #11653f; border-left: 3px solid #4ca878; }
-QPushButton#brokerHealthSummary[healthTone="problem"] { color: #8f2525; background: #fff8f8; border-left: 3px solid #c65353; }
-QPushButton#brokerHealthSummary[healthTone="warning"] { color: #8a4b00; background: #fffaf0; border-left: 3px solid #c58a29; }
-QPushButton#brokerHealthSummary[healthTone="neutral"] { color: #4b5563; border-left: 3px solid #89939f; }
+QToolButton#brokerHealthSummary { color: #4b5563; background: transparent; border: 0; }
+QToolButton#brokerHealthSummary[healthTone="success"] { color: #11653f; border-left: 3px solid #4ca878; }
+QToolButton#brokerHealthSummary[healthTone="problem"] { color: #8f2525; background: #fff8f8; border-left: 3px solid #c65353; }
+QToolButton#brokerHealthSummary[healthTone="warning"] { color: #8a4b00; background: #fffaf0; border-left: 3px solid #c58a29; }
+QToolButton#brokerHealthSummary[healthTone="neutral"] { color: #4b5563; border-left: 3px solid #89939f; }
 QPushButton#topicHealthBadge[healthTone="success"] { color: #11653f; background: #dcf7e9; border-color: #a8dec2; }
 QPushButton#topicHealthBadge[healthTone="problem"] { color: #8f2525; background: #fff0f0; border-color: #d7a4a4; }
 QPushButton#topicHealthBadge[healthTone="warning"] { color: #8a4b00; background: #fff0d5; border-color: #e3c68f; }

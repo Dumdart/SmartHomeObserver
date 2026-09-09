@@ -29,11 +29,22 @@ before broker deletion; a drain timeout aborts deletion.
 
 ## Opt-in and independent retention
 
-Open **Stored observations → History settings**, select a broker, check
-**Record new events for this broker (opt-in)** and apply. The shared history
+Open **History**, select a broker, and choose
+**Record messages**. Its status is shown before Search. This action
+enables or disables recording for future receipts without changing retention limits.
+To adjust limits, open **Stored observations → History settings**, select the broker,
+edit the controls, and choose **Apply history settings**. The shared history
 limits start at seven days, 100,000 events per broker, no per-topic cap, and
-256 MiB of stored payloads globally. Age and per-topic caps can be left blank.
+256 MiB of stored payloads globally. Use **Unlimited** for age or per-topic caps.
+Age and payload limits have unit selectors; batch size and the idle interval are
+under **Advanced pruning settings**. Saved changes show confirmation on the page.
 Large history retention limits may slow startup and history queries.
+
+**Search** starts a fresh query including newly saved events.
+**Next page** continues the current query's fixed boundary. Event history is oldest
+first; latest stored state has independent sorting and result limits. These views
+do not replace **Health → Failure history**. See the [desktop guide](DESKTOP_UX.md)
+for screenshots.
 
 The size budget counts stored payload bytes, not database file bytes, indexes,
 or filesystem allocation. Zero-byte events still count toward event limits.
@@ -74,11 +85,14 @@ coverage. Settings summaries and eviction generations apply globally where label
 
 ## Desktop pages
 
-**Latest stored state** shows one persisted value per topic. **Event history**
-shows individual receipts using the same bounded query as MCP. Search or
-Refresh snapshot starts over; Next page continues the committed snapshot.
+**Stored observations → Latest stored values** shows one persisted value per topic.
+The workspace **History** tab shows individual receipts using the same bounded query
+as MCP. **Record messages** enables or disables recording for its displayed broker
+without changing retention. Search starts over; Next page continues the committed snapshot.
 Changing brokers or filters resets the cursor. Payloads are displayed as plain
 text or base64, with provenance and truncation details on selection.
+
+These screenshots show the earlier dialog layout; message history now lives in the workspace.
 
 ![Latest stored state and separate event history with recording limitations.](images/observation-history-after.png)
 

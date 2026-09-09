@@ -10,12 +10,14 @@ from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
+    QPushButton,
     QMenu,
     QMessageBox,
     QScrollArea,
     QSplitter,
     QStackedWidget,
     QTabWidget,
+    QTabBar,
     QVBoxLayout,
     QWidget,
 )
@@ -29,6 +31,7 @@ from topicgate.gui.components.broker_settings_dialog import (
 )
 from topicgate.gui.components.broker_connection import BrokerConnectionPane
 from topicgate.gui.components.connection_controls import ConnectionControls
+from topicgate.gui.components.event_history_widget import EventHistoryWidget
 from topicgate.gui.components.log_console import LogConsoleDock
 from topicgate.gui.components.expectation_editor import ExpectationEditor
 from topicgate.gui.components.health_inspector import HealthInspector
@@ -84,6 +87,7 @@ class MainWindow(QMainWindow):
         self._diagnostic_profile_editor_window = None
         self._operation_tasks: set[asyncio.Task[None]] = set()
         self._accepting_operations = True
+        self._initial_focus_set = False
         self._settings = settings or QSettings()
         self._stored_observations_dialog: StoredObservationsDialog | None = None
         self._mcp_setup_dialog: McpSetupDialog | None = None
@@ -188,7 +192,11 @@ class MainWindow(QMainWindow):
         self._settings_tabs.tabBar().setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._settings_tabs.addTab(self._subscription_settings, "Subscription")
         self._settings_tabs.addTab(self._topic_expectations, "Expectations")
-        self._context_panel.content_layout.addWidget(self._settings_tabs)
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        settings_scroll.setWidget(self._settings_tabs)
+        self._context_panel.content_layout.addWidget(settings_scroll)
 
         self._observer_workspace = QWidget()
         self._observer_workspace.setObjectName("observerWorkspace")
@@ -202,6 +210,14 @@ class MainWindow(QMainWindow):
         self._topic_inspector.setObjectName("topicInspector")
         inspector_layout = QVBoxLayout(self._topic_inspector)
         inspector_layout.setContentsMargins(0, 0, 0, 0)
+        self._destination_tabs = QTabBar()
+        self._destination_tabs.setObjectName("workspaceDestinations")
+        self._destination_tabs.setAccessibleName("Workspace destination")
+        self._destination_tabs.setExpanding(False)
+        self._destination_tabs.setDrawBase(True)
+        for title in ("Health", "Selected", "Snapshot", "History"):
+            self._destination_tabs.addTab(title)
+        self._destination_tabs.currentChanged.connect(self._navigate)
         self._inspector_stack = QStackedWidget()
         self._inspector_stack.setObjectName("inspectorStack")
         snapshot_scroll = QScrollArea()
@@ -214,7 +230,15 @@ class MainWindow(QMainWindow):
         snapshot_scroll.setWidget(self._snapshot_panel)
         self._inspector_stack.addWidget(snapshot_scroll)
         self._inspector_stack.addWidget(self._topic_details)
+        self._event_history = EventHistoryWidget(self._view_model)
+        self._connect_event_history(self._event_history)
+        history_scroll = QScrollArea()
+        history_scroll.setWidgetResizable(True)
+        history_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        history_scroll.setWidget(self._event_history)
+        self._inspector_stack.addWidget(history_scroll)
         self._inspector_stack.addWidget(self._health_inspector)
+        self._inspector_stack.currentChanged.connect(self._render_destination)
         inspector_layout.addWidget(self._inspector_stack)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -231,6 +255,7 @@ class MainWindow(QMainWindow):
         root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
+        root_layout.addWidget(self._destination_tabs)
         root_layout.addWidget(self._onboarding)
         root_layout.addWidget(self._splitter, 1)
         self.setCentralWidget(root)
@@ -238,6 +263,45 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self._splitter.setSizes([330, 580, 330])
         self._context_panel.setHidden(True)
+        close_settings = QPushButton("Close settings")
+        close_settings.clicked.connect(lambda: self._topic_details.set_settings_visible(False))
+        self._context_panel.header_layout.addWidget(close_settings)
+        self._render_destination()
+
+    def _render_destination(self) -> None:
+        self._destination_tabs.blockSignals(True)
+        self._destination_tabs.setCurrentIndex(
+            (2, 1, 3, 0)[self._inspector_stack.currentIndex()]
+        )
+        self._destination_tabs.setTabEnabled(1, bool(self._view_model.topic))
+        self._destination_tabs.blockSignals(False)
+
+    def _navigate(self, index: int) -> None:
+        (self._show_health, self._show_topic_details,
+         self._show_snapshot, self._show_history)[index]()
+
+    def _show_history(self) -> None:
+        self._inspector_stack.setCurrentIndex(2)
+        self._context_panel.setHidden(True)
+        self._event_history.select_workspace_broker()
+        self._event_history.request_recording_status()
+
+    def _connect_event_history(self, widget: EventHistoryWidget) -> None:
+        widget.recording_status_requested.connect(
+            lambda broker_id: self._run_async(self._view_model.load_history_settings(broker_id))
+        )
+        widget.recording_requested.connect(
+            lambda broker_id, enabled: self._run_async(
+                self._view_model.set_history_recording(broker_id, enabled)
+            )
+        )
+        widget.query_requested.connect(
+            lambda broker_id, topic_filter, after, before, cursor, limit: self._run_async(
+                self._view_model.query_event_history(
+                    broker_id, topic_filter, after, before, cursor, limit
+                )
+            )
+        )
 
     def _set_context_panel_visible(self, visible: bool) -> None:
         self._context_panel.setVisible(
@@ -361,12 +425,9 @@ class MainWindow(QMainWindow):
         self._broker_connection.disconnect_requested.connect(
             lambda: self._run_async(self._view_model.disconnect_from_broker())
         )
-        self._broker_connection.inspect_snapshot_requested.connect(
-            self._show_snapshot
-        )
         self._broker_connection.health_requested.connect(self._show_health)
 
-        self._add_filter_action = QAction("Add filter", self)
+        self._add_filter_action = QAction("Add subscription", self)
         self._add_filter_action.setShortcut("Ctrl+N")
         self._add_filter_action.setToolTip("Add an MQTT subscription filter")
         self._add_filter_action.triggered.connect(self._show_add_filter_dialog)
@@ -611,6 +672,9 @@ class MainWindow(QMainWindow):
             self._view_model.snapshot_health
         )
         snapshot = self._view_model.broker_snapshot
+        self._observer_tree.render_scope(
+            self._view_model.snapshot_query, snapshot, len(self._view_model.subscriptions)
+        )
         self._observer_tree.render_empty_state(
             self._view_model.connection_status,
             self._view_model.subscriptions,
@@ -626,6 +690,7 @@ class MainWindow(QMainWindow):
         self._render_broker_connection()
 
     def _render_details(self) -> None:
+        self._render_destination()
         self._topic_details.render(self._view_model)
         self._topic_expectations.render()
         if (
@@ -653,6 +718,7 @@ class MainWindow(QMainWindow):
         self._render_onboarding()
 
     def _render_broker_profiles(self) -> None:
+        self._event_history.select_workspace_broker()
         self._render_connection_controls()
         self._render_onboarding()
 
@@ -757,11 +823,6 @@ class MainWindow(QMainWindow):
             dialog.history_settings.load_requested.connect(
                 lambda broker_id: self._run_async(self._view_model.load_history_settings(broker_id))
             )
-            dialog.event_history.query_requested.connect(
-                lambda broker_id, topic_filter, after, before, cursor, limit: self._run_async(
-                    self._view_model.query_event_history(broker_id, topic_filter, after, before, cursor, limit)
-                )
-            )
             dialog.history_settings.save_requested.connect(
                 lambda broker_id, enabled, policy: self._run_async(
                     self._view_model.save_history_settings(broker_id, enabled, policy)
@@ -818,7 +879,6 @@ class MainWindow(QMainWindow):
         dialog.raise_()
         dialog.activateWindow()
         self._run_async(self._view_model.load_stored_observations())
-        self._run_async(self._view_model.load_history_settings(dialog.history_settings.broker.currentData()))
 
     async def _preview_and_save_retention_policy(self, policy) -> None:
         preview = await self._view_model.preview_retention_policy(policy)
@@ -997,11 +1057,14 @@ class MainWindow(QMainWindow):
         original_filter: str,
         subscription: Subscription,
     ) -> None:
-        self._run_async(
-            self._view_model.update_subscription(
-                original_filter,
-                subscription,
-            )
+        self._run_async(self._save_subscription(original_filter, subscription))
+
+    async def _save_subscription(
+        self, original_filter: str, subscription: Subscription,
+    ) -> None:
+        await self._view_model.update_subscription(original_filter, subscription)
+        self._subscription_settings.show_feedback(
+            f"Subscription applied: {subscription.topic_filter}"
         )
 
     def _show_add_filter_dialog(self) -> None:
@@ -1243,10 +1306,7 @@ class MainWindow(QMainWindow):
         if selected_topic:
             self._view_model.select_topic(selected_topic)
         self._restore_snapshot_preferences()
-        if self._view_model.topic:
-            self._show_topic_details()
-        else:
-            self._show_snapshot()
+        self._show_health()
         log_visible = self._settings.value(
             "workspace/logVisible",
             False,
@@ -1322,4 +1382,9 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        self._topic_details.focus_payload()
+        if not self._initial_focus_set:
+            self._initial_focus_set = True
+            if self._inspector_stack.currentWidget() is self._topic_details:
+                self._topic_details.focus_payload()
+            else:
+                self._observer_tree.focus_search()

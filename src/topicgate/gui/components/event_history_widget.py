@@ -16,18 +16,24 @@ if TYPE_CHECKING:
 
 class EventHistoryWidget(QWidget):
     query_requested = Signal(object, str, object, object, object, int)
+    recording_status_requested = Signal(object)
+    recording_requested = Signal(object, bool)
 
     def __init__(self, view_model: MainViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._view_model = view_model
+        self._recording_pending = False
+        self._recording_loading = False
         layout = QVBoxLayout(self)
-        description = QLabel(
-            "Individual TopicGate-observed receipts, oldest first. This is not authoritative "
-            "broker history. Enable recording per broker in History settings."
+        heading = QLabel("Message history")
+        heading.setObjectName("workspaceHeading")
+        layout.addWidget(heading)
+        self.setToolTip(
+            "Message receipts saved while recording was enabled, oldest first. "
+            "Earlier gaps cannot be recovered. Health failure history and latest stored values are separate."
         )
-        description.setWordWrap(True)
-        layout.addWidget(description)
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.broker = QComboBox()
         self.broker.setObjectName("eventHistoryBroker")
         self.broker.setAccessibleName("Event history broker")
@@ -36,7 +42,6 @@ class EventHistoryWidget(QWidget):
         self.topic_filter = QLineEdit("#")
         self.topic_filter.setObjectName("eventHistoryTopicFilter")
         self.topic_filter.setAccessibleName("Event history MQTT topic filter")
-        form.addRow("Broker", self.broker)
         form.addRow("MQTT topic filter", self.topic_filter)
         self.after_enabled, self.after = self._time_filter(form, "After")
         self.before_enabled, self.before = self._time_filter(form, "Before")
@@ -46,20 +51,44 @@ class EventHistoryWidget(QWidget):
         self.limit.setObjectName("eventHistoryLimit")
         self.limit.setAccessibleName("Event history page size")
         form.addRow("Events per page", self.limit)
+        self.recording_status = QLabel("Loading recording status…")
+        self.recording_status.setObjectName("eventHistoryRecordingStatus")
+        self.recording_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.recording_status.setWordWrap(True)
+        recording_actions = QHBoxLayout()
+        self.enable_recording = QCheckBox("Record messages")
+        self.enable_recording.setObjectName("enableEventRecording")
+        self.enable_recording.setEnabled(False)
+        self.enable_recording.setToolTip(
+            "Record future receipts for this broker. Turning recording off keeps saved history."
+        )
+        self.enable_recording.clicked.connect(self._request_recording)
+        self.reload_recording = QPushButton("Retry")
+        self.reload_recording.clicked.connect(self.request_recording_status)
+        broker_row = QHBoxLayout()
+        broker_row.addWidget(QLabel("Broker"))
+        broker_row.addWidget(self.broker, 1)
+        layout.addLayout(broker_row)
+        recording_actions.addWidget(self.enable_recording)
+        recording_actions.addWidget(self.recording_status, 1)
+        recording_actions.addWidget(self.reload_recording)
+        recording_actions.addStretch()
+        layout.addLayout(recording_actions)
         layout.addLayout(form)
         actions = QHBoxLayout()
         self.search = QPushButton("Search")
-        self.refresh = QPushButton("Refresh snapshot")
+        self.search.setProperty("primary", True)
+        self.search.setToolTip("Start a new search, including newly saved messages.")
         self.next_page = QPushButton("Next page")
         self.next_page.setObjectName("eventHistoryNextPage")
         self.next_page.setEnabled(False)
         self.search.clicked.connect(lambda: self._request(False))
-        self.refresh.clicked.connect(lambda: self._request(False))
         self.next_page.clicked.connect(lambda: self._request(True))
-        for button in (self.search, self.refresh, self.next_page):
+        for button in (self.search, self.next_page):
             actions.addWidget(button)
+        actions.addStretch()
         layout.addLayout(actions)
-        self.status = QLabel("Search to read committed event history.")
+        self.status = QLabel("Search saved message history.")
         self.status.setObjectName("eventHistoryStatus")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
@@ -69,6 +98,7 @@ class EventHistoryWidget(QWidget):
         self.limitations.setAccessibleName("Event history limitations")
         self.limitations.setReadOnly(True)
         self.limitations.setMaximumHeight(90)
+        self.limitations.setVisible(False)
         layout.addWidget(self.limitations)
         self.results = QTableWidget(0, 5)
         self.results.setObjectName("eventHistoryResults")
@@ -92,10 +122,71 @@ class EventHistoryWidget(QWidget):
                        self.limit.valueChanged):
             signal.connect(view_model.invalidate_event_history)
         view_model.event_history_changed.connect(self.render)
+        view_model.history_settings_changed.connect(self._recording_loaded)
+        view_model.operation_state_changed.connect(self.render_recording)
+        self.broker.currentIndexChanged.connect(self.request_recording_status)
+        self.broker.setCurrentIndex(max(0, self.broker.findData(view_model.active_broker_profile.id)))
+        self.render_recording()
+
+    def select_workspace_broker(self) -> None:
+        broker_id = self._view_model.active_broker_profile.id
+        previous = self.broker.currentData()
+        self.broker.blockSignals(True)
+        self.broker.clear()
+        for profile in self._view_model.broker_profiles:
+            self.broker.addItem(profile.name, profile.id)
+        self.broker.setCurrentIndex(self.broker.findData(broker_id))
+        self.broker.blockSignals(False)
+        if previous != broker_id:
+            self._view_model.invalidate_event_history()
+            self.request_recording_status()
+
+    def _request_recording(self, enabled: bool) -> None:
+        self._recording_pending = True
+        self.enable_recording.setEnabled(False)
+        self.recording_requested.emit(self.broker.currentData(), enabled)
+        self.render_recording()
+
+    def _recording_loaded(self) -> None:
+        if self._view_model.history_settings_broker == self.broker.currentData():
+            self._recording_loading = False
+            self._recording_pending = False
+        self.render_recording()
+
+    def request_recording_status(self) -> None:
+        self._recording_loading = True
+        self.render_recording()
+        self.recording_status_requested.emit(self.broker.currentData())
+
+    def render_recording(self) -> None:
+        vm = self._view_model
+        broker = self.broker.currentData()
+        status = vm.history_recording_status
+        known = vm.history_settings_broker == broker and status is not None and status.broker_id == broker
+        busy = vm.is_busy("history-settings") or self._recording_pending
+        error = vm.history_settings_error if vm.history_settings_broker == broker else None
+        self.enable_recording.setEnabled(known and not busy and not error and not self._recording_loading)
+        self.enable_recording.setChecked(bool(known and status.enabled))
+        self.reload_recording.setVisible(bool(error) or not known or self._recording_loading)
+        self.reload_recording.setEnabled(not busy)
+        self.broker.setEnabled(not busy)
+        if self._recording_loading:
+            message = "Loading recording status…"
+        elif error:
+            message = error
+        elif busy:
+            message = "Applying recording settings…"
+        elif known:
+            message = (
+                f"Recording {'enabled' if status.enabled else 'disabled'}"
+            )
+        else:
+            message = "Recording status unavailable"
+        self.recording_status.setText(message)
 
     @staticmethod
     def _time_filter(form: QFormLayout, title: str) -> tuple[QCheckBox, QDateTimeEdit]:
-        enabled = QCheckBox(f"Use {title.lower()} bound")
+        enabled = QCheckBox(f"Received {title.lower()}")
         editor = QDateTimeEdit(QDateTime.currentDateTimeUtc())
         editor.setDisplayFormat("yyyy-MM-dd HH:mm:ss 'UTC'")
         editor.setCalendarPopup(True)
@@ -124,7 +215,6 @@ class EventHistoryWidget(QWidget):
         vm = self._view_model
         page = vm.event_history_result
         self.search.setEnabled(not vm.event_history_busy)
-        self.refresh.setEnabled(not vm.event_history_busy)
         self.next_page.setEnabled(not vm.event_history_busy and page is not None and page.next_cursor is not None)
         self.results.setRowCount(0 if page is None else len(page.events))
         self.payload.clear()
@@ -142,7 +232,6 @@ class EventHistoryWidget(QWidget):
             status = page.recording
             self.status.setText(
                 f"{len(page.events)} events on this page · committed snapshot · "
-                f"recording {'enabled' if status.enabled else 'disabled'} · "
                 f"pending {status.pending} · dropped {status.dropped} · failed {status.failed}. "
                 f"Oldest retained: {page.usage.oldest_received_at or 'none'}."
             )
@@ -150,12 +239,13 @@ class EventHistoryWidget(QWidget):
                 item.replace("follow next_cursor", "use Next page") for item in page.limitations
             ))
         else:
-            self.status.setText("Search to read committed event history.")
+            self.status.setText("Search saved message history.")
             self.limitations.clear()
         if vm.event_history_busy:
-            self.status.setText("Loading committed event history…")
+            self.status.setText("Loading saved event history…")
         elif vm.event_history_error:
             self.status.setText(vm.event_history_error)
+        self.limitations.setVisible(bool(self.limitations.toPlainText()))
 
     def _inspect(self) -> None:
         item = self.results.item(self.results.currentRow(), 0)

@@ -116,13 +116,13 @@ def test_topic_omission_notice_distinguishes_filter_and_result_limit() -> None:
     assert topic_omission_notice(
         SnapshotQuery(topic_filter="other/#"), snapshot, state
     ) == (
-        "Current value available, but omitted from the observer tree because "
+        "Current value available, but excluded from snapshot values and counts because "
         "the active topic filter 'other/#' excludes it."
     )
     assert topic_omission_notice(
         SnapshotQuery(result_limit=1), snapshot, state
     ) == (
-        "Current value available, but omitted from the observer tree because "
+        "Current value available, but excluded from snapshot values and counts because "
         "it is beyond the active result limit."
     )
 

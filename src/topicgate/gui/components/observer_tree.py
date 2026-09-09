@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.models.subscription import Subscription
+from topicgate.app.models.broker_snapshot import BrokerSnapshot
+from topicgate.presentation.snapshot_presentation import SnapshotQuery
 from topicgate.gui.components.workspace_pane import WorkspacePane
 from topicgate.gui.icons import delete_icon
 from topicgate.presentation.topic_presentation import TopicTreeNode
@@ -34,19 +36,28 @@ class ObserverTreePane(WorkspacePane):
 
         controls = QHBoxLayout()
         self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("Search topics...")
+        self._search_edit.setPlaceholderText("Filter displayed topics…")
         self._search_edit.setAccessibleName("Search observed topics")
         self._search_edit.setClearButtonEnabled(True)
         controls.addWidget(self._search_edit, 1)
 
         add_button = QToolButton()
-        add_button.setText("+ Filter")
+        add_button.setText("Add subscription")
         add_button.setToolTip("Add an MQTT subscription filter")
         add_button.setAccessibleName("Add MQTT subscription filter")
         add_button.clicked.connect(self.add_filter_requested)
         controls.addWidget(add_button)
 
         self.content_layout.addLayout(controls)
+        self._scope = QLabel()
+        self._scope.setObjectName("observerDisplayScope")
+        self._scope.setTextFormat(Qt.TextFormat.PlainText)
+        self._scope.setWordWrap(True)
+        self.content_layout.addWidget(self._scope)
+        self._search_status = QLabel()
+        self._search_status.setObjectName("observerSearchStatus")
+        self._search_status.setWordWrap(True)
+        self.content_layout.addWidget(self._search_status)
 
         self._model = QStandardItemModel(self)
         self._model.setHorizontalHeaderLabels(["Topic", "", "State"])
@@ -82,6 +93,7 @@ class ObserverTreePane(WorkspacePane):
         self._tree.clicked.connect(self._topic_activated)
         self._tree.activated.connect(self._topic_activated)
         self._search_edit.textChanged.connect(self._proxy.setFilterFixedString)
+        self._search_edit.textChanged.connect(self._render_search_status)
         self.content_layout.addWidget(self._tree, 1)
         self._empty_state = QFrame()
         self._empty_state.setObjectName("observerEmptyState")
@@ -147,9 +159,9 @@ class ObserverTreePane(WorkspacePane):
             return
         if not subscriptions:
             message, action, label = (
-                "No subscriptions. Add a filter to observe values.",
+                "No subscriptions. Add a subscription to observe values.",
                 "add-filter",
-                "Add filter",
+                "Add subscription",
             )
         elif connection_status == "disconnected":
             message, action, label = (
@@ -157,15 +169,21 @@ class ObserverTreePane(WorkspacePane):
                 "connect",
                 "Connect",
             )
+        elif has_topics and has_cached_values:
+            message, action, label = (
+                "These snapshot values were restored from storage. Their receive times may predate this connection.",
+                "",
+                "",
+            )
         elif query_is_filtered and not has_topics:
             message, action, label = (
-                "No values match the current snapshot filters. Clear filters or capture a new snapshot.",
+                "No observed values match the current snapshot filters. Subscription rows remain visible. Clear display filters to inspect available values.",
                 "clear-filters",
                 "Clear filters",
             )
         else:
             message, action, label = (
-                "No values observed yet. Capture a snapshot after publishers send messages.",
+                "No observed values in this snapshot. Subscription rows describe what TopicGate listens for; they are not received values.",
                 "observe",
                 "Reconnect & observe",
             )
@@ -174,7 +192,30 @@ class ObserverTreePane(WorkspacePane):
         self._empty_state_action.setText(label)
         self._empty_state_action.setAccessibleName(label)
         self._empty_state_action.setProperty("action", action)
+        self._empty_state_action.setVisible(bool(action))
         self._empty_state.setVisible(True)
+
+    def render_scope(
+        self, query: SnapshotQuery, snapshot: BrokerSnapshot, subscription_count: int,
+    ) -> None:
+        stored = sum(item.source.value == "stored" for item in snapshot.topics)
+        age = "Unlimited" if query.max_age_seconds is None else f"{query.max_age_seconds:g} seconds"
+        self._scope.setText(
+            f"{subscription_count} subscriptions · {len(snapshot.topics)} snapshot values "
+            f"({stored} previously stored).\n"
+            f"Display: {query.topic_filter} · Maximum age: {age} · "
+            f"Up to {query.result_limit} values. Live means received this session, not necessarily recent."
+        )
+        self._render_search_status()
+
+    def _render_search_status(self) -> None:
+        active = bool(self._search_edit.text())
+        self._search_status.setText(
+            "No displayed topics match this text. Clear the search to restore the tree."
+            if active and self._proxy.rowCount() == 0
+            else "Text filter active — snapshot counts above are before this text filter."
+        )
+        self._search_status.setVisible(active)
 
     def render_tree(
         self,
@@ -195,6 +236,13 @@ class ObserverTreePane(WorkspacePane):
         def apply_node_presentation(items: tuple[TopicTreeNode, ...]) -> None:
             for node in items:
                 item = self._items[node.path]
+                if node.is_subscription:
+                    item.setText(f"Subscription: {node.label}")
+                item.setToolTip(
+                    f"{node.path}\n"
+                    + ("MQTT subscription. " if node.is_subscription else "")
+                    + ("Observed value in this snapshot." if node.is_observed else "No observed value on this row.")
+                )
                 item.setSelectable(node.selectable)
                 item.setData(node.path if node.selectable else None, TOPIC_ROLE)
                 if node.badges:

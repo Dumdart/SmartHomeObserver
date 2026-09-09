@@ -253,6 +253,7 @@ def test_settings_health_and_observation_tabs_reuse_visible_topic_tab_style() ->
     repository = FakeGuiRepository()
     view_model = MainViewModel(runtime_for(repository), repository.state.topic)
     window = MainWindow(view_model)
+    window._show_topic_details()
     settings_tabs = window.findChild(QTabWidget, "topicSettingsTabs")
     assert settings_tabs is not None
     assert settings_tabs.tabBar().objectName() == "topicSettingsTabs"
@@ -279,7 +280,7 @@ def test_settings_health_and_observation_tabs_reuse_visible_topic_tab_style() ->
     )
     assert observation_tabs is not None
     assert observation_tabs.tabBar().objectName() == "storedObservationsPages"
-    assert observation_tabs.tabBar().expanding()
+    assert not observation_tabs.tabBar().expanding()
     assert "QTabBar#topicSettingsTabs::tab:selected" in LIGHT_THEME
     assert "QTabBar#healthTabs::tab:selected" in LIGHT_THEME
     assert "QTabBar#storedObservationsPages::tab:selected" in LIGHT_THEME
@@ -310,6 +311,86 @@ def test_topic_expectation_editor_creates_utf8_rule() -> None:
     created = management.create_expectation.call_args.args[0]
     assert created.name == "Temperature"
     assert created.condition.expected_value == b"21.5"
+    assert "saved" in editor.findChild(QLabel, "expectationSaveFeedback").text()
+    window.close()
+    application.processEvents()
+
+
+def test_expectation_directory_includes_topic_rules_and_preserves_navigation_scope(tmp_path) -> None:
+    from topicgate.core.models.health import TopicTarget
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    runtime = runtime_for(repository)
+    rule = HealthExpectation(
+        uuid4(), 1, True, HealthSeverity.WARNING,
+        TopicTarget(runtime.active_broker.id, repository.state.topic),
+        EqualCondition(b"21.5"), frozenset(), "Kitchen temperature",
+    )
+    management = MagicMock()
+    management.list_expectations.return_value = (rule,)
+    vm = MainViewModel(runtime, expectation_management_service=management)
+    window = MainWindow(vm, QSettings(str(tmp_path / "gui.ini"), QSettings.Format.IniFormat))
+    window._destination_tabs.setCurrentIndex(0)
+    inspector = window._health_inspector
+    inspector._tabs.setCurrentIndex(1)
+    table = inspector.findChild(QTableWidget, "healthExpectationDirectory")
+    assert table.rowCount() == 1
+    assert table.item(0, 0).text() == rule.name
+    table.selectRow(0)
+    inspector.render()
+    assert inspector._open_rule.isEnabled()
+    inspector._open_rule.click()
+    assert vm.topic == repository.state.topic
+    assert window._topic_expectations._selected_id == rule.expectation_id
+    assert runtime.active_broker.name in window._topic_expectations._context.text()
+    assert window._destination_tabs.currentIndex() == 1
+    window._destination_tabs.setCurrentIndex(0)
+    assert inspector._tabs.currentIndex() == 1
+    inspector._expectation_scope.setCurrentIndex(1)
+    assert table.rowCount() == 0
+    assert not inspector._open_rule.isEnabled()
+    window.close()
+    application.processEvents()
+
+
+async def test_subscription_apply_feedback_and_small_window_layout(tmp_path) -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    vm = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(vm, QSettings(str(tmp_path / "gui.ini"), QSettings.Format.IniFormat))
+    window.resize(1024, 640)
+    window.show()
+    window._show_topic_expectations()
+    application.processEvents()
+    assert window.width() == 1024
+    assert window.height() == 640
+    from PySide6.QtGui import QShowEvent
+
+    window._observer_tree.focus_search()
+    window.showEvent(QShowEvent())
+    assert window.focusWidget() is window._observer_tree._search_edit
+    await window._save_subscription(repository.subscriptions[0].topic_filter, repository.subscriptions[0])
+    assert "Subscription applied" in window.findChild(QLabel, "subscriptionApplyFeedback").text()
+    window.close()
+    application.processEvents()
+
+
+def test_observer_filter_explains_subscription_rows_and_hidden_values(tmp_path) -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    repository.subscriptions = (Subscription(repository.state.topic),)
+    vm = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(vm, QSettings(str(tmp_path / "gui.ini"), QSettings.Format.IniFormat))
+    vm.apply_snapshot_query(SnapshotQuery(topic_filter="elsewhere/#"))
+    pane = window._observer_tree
+    assert "0 snapshot values" in pane._scope.text()
+    assert "Subscription rows remain visible" in pane._empty_state_text.text()
+    assert "excluded from snapshot values and counts" in vm.topic_detail.snapshot_scope_note
+    assert any(item.text().startswith("Subscription:") for item in pane._items.values())
+    pane._search_edit.setText("does-not-exist")
+    assert "No displayed topics" in pane._search_status.text()
+    pane._search_edit.clear()
+    assert pane._search_status.isHidden()
     window.close()
     application.processEvents()
 
@@ -693,6 +774,7 @@ def test_settings_button_reveals_subscription_and_expectation_settings() -> None
     )
     settings.clear()
     window = MainWindow(view_model, settings)
+    window._show_topic_details()
     context = window.findChild(QWidget, "contextPanel")
     edit_button = window.findChild(QToolButton, "topicEditButton")
 
@@ -709,7 +791,7 @@ def test_settings_button_reveals_subscription_and_expectation_settings() -> None
     edit_button.click()
 
     assert not context.isHidden()
-    assert edit_button.text() == "Settings"
+    assert edit_button.text() == "Close settings"
     assert context.findChild(QWidget, "topicExpectationEditor") is not None
     assert context.findChild(QWidget, "topicPublishPane") is None
     assert context.findChild(QPushButton, "revertSubscriptionButton") is None
@@ -734,6 +816,7 @@ def test_workspace_headers_and_primary_controls_share_rows() -> None:
         MainViewModel(runtime_for(repository), repository.state.topic),
         settings,
     )
+    window._show_topic_details()
     window.findChild(QToolButton, "topicEditButton").click()
     window.show()
     application.processEvents()
@@ -1124,7 +1207,7 @@ def test_health_navigation_preserves_topic_edits_and_same_topic_returns() -> Non
     editor = window.findChild(QLineEdit, "expectationName")
     editor.setText("Unfinished rule")
 
-    window.findChild(QPushButton, "brokerHealthSummary").click()
+    window.findChild(QToolButton, "brokerHealthSummary").click()
 
     assert stack.currentWidget() is window._health_inspector
     assert window._view_model.topic == repository.state.topic
@@ -1299,6 +1382,7 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
             expectation_management_service=management,
         )
     )
+    window._show_topic_details()
     timer = window.findChild(QObject, "healthRefreshTimer")
     timer.setInterval(0)
 
@@ -1307,7 +1391,7 @@ def test_health_refreshes_while_inspector_is_closed_without_navigation() -> None
 
     assert health_query.get_health_report.called
     assert "Failed" in window.findChild(
-        QPushButton, "brokerHealthSummary"
+        QToolButton, "brokerHealthSummary"
     ).text()
     assert window._inspector_stack.currentWidget() is window._topic_details
     window.close()
@@ -1410,7 +1494,7 @@ def test_health_inspector_renders_latest_finding_delta() -> None:
     application.processEvents()
 
 
-def test_inspector_starts_from_selection_and_owns_one_snapshot() -> None:
+def test_inspector_defaults_to_health_and_preserves_restored_selection() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
     empty_settings = QSettings(
@@ -1426,7 +1510,8 @@ def test_inspector_starts_from_selection_and_owns_one_snapshot() -> None:
     stack = snapshot_window.findChild(QStackedWidget, "inspectorStack")
     snapshots = snapshot_window.findChildren(SnapshotPanel)
     scroll = snapshot_window.findChild(QScrollArea, "snapshotPanelScrollArea")
-    assert stack.currentIndex() == 0
+    assert stack.currentWidget() is snapshot_window._health_inspector
+    assert snapshot_window._destination_tabs.currentIndex() == 0
     assert len(snapshots) == 1
     assert snapshots[0] is snapshot_window._snapshot_panel
     assert snapshot_window._observer_tree.findChildren(SnapshotPanel) == []
@@ -1446,7 +1531,10 @@ def test_inspector_starts_from_selection_and_owns_one_snapshot() -> None:
     assert details_window.findChild(
         QStackedWidget,
         "inspectorStack",
-    ).currentWidget() is details_window._topic_details
+    ).currentWidget() is details_window._health_inspector
+    assert details_window._view_model.topic == repository.state.topic
+    details_window._destination_tabs.setCurrentIndex(1)
+    assert details_window._inspector_stack.currentWidget() is details_window._topic_details
 
     snapshot_window.close()
     details_window.close()
@@ -1480,6 +1568,7 @@ def test_selected_subscription_shows_value_omitted_from_observer_tree() -> None:
     view_model = MainViewModel(runtime_for(repository), topic)
     window = MainWindow(view_model)
 
+    window._show_topic_details()
     window._apply_snapshot_query(SnapshotQuery(topic_filter="other/#"))
 
     tree = window.findChild(QTreeView, "observerTree")
@@ -1504,6 +1593,7 @@ def test_snapshot_panel_exposes_active_bounds_and_omitted_count() -> None:
     view_model = MainViewModel(runtime_for(repository))
     window = MainWindow(view_model)
 
+    window._show_snapshot()
     window._apply_snapshot_query(SnapshotQuery("home/#", None, 1, 256))
     window._snapshot_panel.render_health(
         replace(view_model.snapshot_health, omitted_count=1)
@@ -1544,13 +1634,7 @@ def test_inspector_navigation_preserves_snapshot_and_tree_editing_state() -> Non
     window.findChild(QToolButton, "topicEditButton").setChecked(True)
     assert not window._context_panel.isHidden()
 
-    inspect = window.findChild(QPushButton, "inspectSnapshotButton")
-    requests: list[bool] = []
-    window._broker_connection.inspect_snapshot_requested.connect(
-        lambda: requests.append(True)
-    )
-    inspect.click()
-    assert requests == [True]
+    window._destination_tabs.setCurrentIndex(2)
     assert stack.currentIndex() == 0
     assert window._view_model.topic == repository.state.topic
     assert window._context_panel.isHidden()
@@ -1579,6 +1663,7 @@ def test_background_updates_preserve_the_explicit_inspector_view() -> None:
     repository = FakeGuiRepository()
     view_model = MainViewModel(runtime_for(repository), repository.state.topic)
     window = MainWindow(view_model)
+    window._show_topic_details()
     stack = window.findChild(QStackedWidget, "inspectorStack")
 
     assert stack.currentWidget() is window._topic_details
@@ -1607,6 +1692,7 @@ async def test_reconnect_preserves_the_current_inspector_view() -> None:
     view_model = MainViewModel(runtime_for(repository), repository.state.topic)
     view_model._snapshot_service._sleep = AsyncMock()
     window = MainWindow(view_model)
+    window._show_topic_details()
     stack = window.findChild(QStackedWidget, "inspectorStack")
 
     await view_model.reconnect_and_observe()
@@ -2080,8 +2166,8 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     window = MainWindow(view_model)
     selector = window.findChild(QComboBox, "connectionBrokerSelector")
     lifecycle = window.findChild(QPushButton, "brokerLifecycleButton")
-    health = window.findChild(QPushButton, "brokerHealthSummary")
-    inspect_snapshot = window.findChild(QPushButton, "inspectSnapshotButton")
+    health = window.findChild(QToolButton, "brokerHealthSummary")
+    management = window.findChild(QToolButton, "manageBrokersButton")
     profile_menu = window.findChild(QMenu, "brokerProfileSelectorMenu")
 
     assert [selector.itemText(index) for index in range(selector.count())] == [
@@ -2092,22 +2178,20 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     assert lifecycle.text() == "Disconnect"
     assert lifecycle.isEnabled()
     assert window.findChild(QPushButton, "brokerDisconnectButton") is None
-    assert inspect_snapshot.isEnabled()
-    assert inspect_snapshot.accessibleName() == "Inspect broker snapshot"
+    assert management.isEnabled()
+    assert management.accessibleName() == "Manage broker profiles"
+    assert window.findChild(QPushButton, "inspectSnapshotButton") is None
     window.resize(window.minimumSize())
     window.show()
     application.processEvents()
     assert selector.isVisible()
     assert health.isVisible()
-    assert inspect_snapshot.isVisible()
+    assert management.isVisible()
     assert lifecycle.isVisible()
     assert lifecycle.text() == "Disconnect"
-    assert selector.geometry().top() == lifecycle.geometry().top()
-    assert health.geometry().top() == inspect_snapshot.geometry().top()
-    assert selector.geometry().right() == health.geometry().right()
-    assert lifecycle.geometry().left() == inspect_snapshot.geometry().left()
-    assert lifecycle.width() == inspect_snapshot.width()
-    assert selector.geometry().top() < health.geometry().top()
+    assert selector.geometry().top() == management.geometry().top()
+    assert health.geometry().top() == lifecycle.geometry().top()
+    assert selector.geometry().top() < lifecycle.geometry().top()
     assert [
         action.defaultWidget()
         .findChild(QToolButton, "selectBrokerProfileButton")
@@ -3062,6 +3146,7 @@ def test_cancelled_broker_switch_and_profile_updates_preserve_topic_details() ->
         repository.state.topic,
     )
     window = MainWindow(view_model)
+    window._show_topic_details()
     stack = window.findChild(QStackedWidget, "inspectorStack")
     active = view_model.active_broker_profile
     inactive = view_model.broker_profiles[1]

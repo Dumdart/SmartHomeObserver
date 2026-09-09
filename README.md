@@ -69,11 +69,13 @@ Configure a broker in TopicGate Desktop for read-only use, or use the authorized
 
 TopicGate snapshots return the latest value it observed and retained, not authoritative broker history.
 
-For individual receipts, enable **Stored observations → History settings → Record new
-events for this broker**. Recording is off by default for every broker. The separate
-**Event history** page and read-only `get_topic_history` tool provide cursor-paginated
-history with recording and retention limitations. Adjust history age/count/size limits
-independently from latest state; large limits may slow startup and queries.
+For individual receipts, open **History** in the workspace and use **Record messages**
+for the displayed broker. Recording status appears before Search; enabling or disabling
+recording leaves retention limits and saved receipts unchanged. Recording is off by
+default for every broker. **History** and the read-only `get_topic_history` tool provide
+cursor-paginated receipts with recording and retention limitations. Adjust limits under
+**Stored observations → History settings** independently from latest values; large
+limits may slow startup and queries.
 See [observation history and retention](docs/OBSERVATION_HISTORY.md).
 
 - **Live** values arrived in the current observation session.
@@ -92,7 +94,7 @@ Define what healthy means for your broker and topics: an established connection,
 
 *Sample health overview. A connected broker can still have failed or unknown checks; the connection badge alone does not establish health.*
 
-Use the broker's **Health → Expectations** tab for connection checks, or a topic's **Settings → Expectations** tab for topic conditions. Configure expectations after adding a subscription that covers the topic.
+Use **Health → Expectations** to browse all rules for the selected broker, with **All / Broker / Topic** scopes. Open a rule to edit it with its target selected, or use **Topic expectations** beside the selected topic. Configure expectations after adding a subscription that covers the topic. See the [desktop workspace guide and UX screenshots](docs/DESKTOP_UX.md).
 
 <details>
 <summary>See the broker expectation editor</summary>

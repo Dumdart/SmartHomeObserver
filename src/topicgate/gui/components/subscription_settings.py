@@ -58,13 +58,12 @@ class SubscriptionSettingsPane(QWidget):
                 "2 - Do not send retained messages",
             ]
         )
-        form.addRow("Filter", self._filter_edit)
+        form.addRow("MQTT subscription", self._filter_edit)
         form.addRow("QoS", self._qos_combo)
         form.addRow("Retain", self._retain_as_published)
         form.addRow("Handling", self._retain_handling)
         self.content_layout.addLayout(form)
 
-        self.content_layout.addStretch(1)
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         self._apply_button = QPushButton("Apply")
@@ -73,6 +72,12 @@ class SubscriptionSettingsPane(QWidget):
         self._apply_button.clicked.connect(self._apply)
         buttons.addWidget(self._apply_button)
         self.content_layout.addLayout(buttons)
+        self._feedback = QLabel()
+        self._feedback.setObjectName("subscriptionApplyFeedback")
+        self._feedback.setTextFormat(Qt.TextFormat.PlainText)
+        self._feedback.setWordWrap(True)
+        self.content_layout.addWidget(self._feedback)
+        self.content_layout.addStretch(1)
 
     def render(
         self,
@@ -80,6 +85,7 @@ class SubscriptionSettingsPane(QWidget):
         subscription: Subscription | None,
     ) -> None:
         self._selected_topic = selected_topic
+        self._feedback.clear()
         self._subscription = subscription
         self._set_editor_enabled(subscription is not None)
 
@@ -116,6 +122,9 @@ class SubscriptionSettingsPane(QWidget):
             QMessageBox.warning(self, "Invalid subscription", str(error))
             return
         self.apply_requested.emit(self._subscription.topic_filter, updated)
+
+    def show_feedback(self, message: str) -> None:
+        self._feedback.setText(message)
 
     def _set_editor_enabled(self, enabled: bool) -> None:
         for widget in (

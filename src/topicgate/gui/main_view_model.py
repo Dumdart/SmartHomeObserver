@@ -136,6 +136,7 @@ class MainViewModel(QObject):
         self.history_usage: HistoryUsage | None = None
         self.history_settings_broker: UUID | None = None
         self.history_settings_error: str | None = None
+        self.history_settings_feedback = ""
         self._history_settings_generation = 0
         self.event_history_result: TopicHistoryResult | None = None
         self.event_history_error: str | None = None
@@ -222,6 +223,11 @@ class MainViewModel(QObject):
             if isinstance(item.target, TopicTarget)
             and item.target.topic == self._topic
         )
+
+    @property
+    def all_expectations(self) -> tuple[HealthExpectation, ...]:
+        """Configured rules for the selected broker, including topic rules."""
+        return self._broker_health_expectations()
 
     @property
     def broker_expectations(self) -> tuple[HealthExpectation, ...]:
@@ -939,6 +945,7 @@ class MainViewModel(QObject):
                 self.event_history_changed.emit()
 
     async def load_history_settings(self, broker_id: UUID) -> None:
+        self.history_settings_feedback = ""
         self._history_settings_generation += 1
         generation = self._history_settings_generation
         try:
@@ -961,6 +968,22 @@ class MainViewModel(QObject):
         self.history_settings_error = None
         self.history_settings_changed.emit()
 
+    async def set_history_recording(self, broker_id: UUID, enabled: bool) -> None:
+        """Record future receipts without changing retention limits."""
+        async with self._operation("history-settings"):
+            try:
+                await asyncio.to_thread(self._runtime.set_history_recording, broker_id, enabled)
+            except Exception:
+                self.history_settings_broker = broker_id
+                self.history_settings_error = "Recording could not be changed. Reload status to retry."
+                self.history_settings_changed.emit()
+                return
+            await self.load_history_settings(broker_id)
+
+            if not self.history_settings_error:
+                self.history_settings_feedback = f"Recording {'enabled' if enabled else 'disabled'}."
+                self.history_settings_changed.emit()
+
     async def save_history_settings(
         self, broker_id: UUID, enabled: bool, policy: HistoryRetentionPolicy,
     ) -> None:
@@ -976,6 +999,9 @@ class MainViewModel(QObject):
                 self.history_settings_changed.emit()
                 return
             await self.load_history_settings(broker_id)
+            if not self.history_settings_error:
+                self.history_settings_feedback = "History settings applied."
+                self.history_settings_changed.emit()
 
     async def load_stored_observations(
         self,
