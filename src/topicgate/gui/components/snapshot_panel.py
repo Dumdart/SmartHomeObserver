@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,12 +31,21 @@ class SnapshotPanel(WorkspacePane):
     reset_requested = Signal()
     reconnect_observe_requested = Signal(object)
     validation_failed = Signal(str)
+    advanced_changed = Signal(bool)
 
     def __init__(self) -> None:
         super().__init__("Broker snapshot")
         self.setObjectName("snapshotPanel")
         self.setMinimumWidth(0)
 
+        self._advanced_button = QToolButton()
+        self._advanced_button.setObjectName("snapshotAdvancedButton")
+        self._advanced_button.setText("Advanced")
+        self._advanced_button.setCheckable(True)
+        self._advanced_button.setAccessibleName(
+            "Show advanced snapshot details"
+        )
+        self._advanced_button.toggled.connect(self._set_advanced_visible)
         self._summary_labels = {
             name: self._summary_label(object_name)
             for name, object_name in (
@@ -47,6 +57,7 @@ class SnapshotPanel(WorkspacePane):
         }
         self.header_layout.addWidget(self._summary_labels["connection"])
         self.header_layout.addWidget(self._summary_labels["completeness"])
+        self.header_layout.addWidget(self._advanced_button)
 
         secondary_summary = QHBoxLayout()
         secondary_summary.setSpacing(12)
@@ -179,20 +190,18 @@ class SnapshotPanel(WorkspacePane):
             clear_button,
             observe_button,
         )
-        self._rendered_query = None
+        self._rendered_query = SnapshotQuery()
         self._omitted_count = 0
         self.render_query(SnapshotQuery())
         self.render_connection_status("disconnected")
         self._summary_labels["returned"].setText("Returned 0")
         self._summary_labels["dropped"].setText("Dropped 0")
         self._summary_labels["completeness"].setText("Limited")
+        self._set_advanced_visible(False)
 
     @property
-    def has_unsaved_edits(self) -> bool:
-        try:
-            return self.query != self._rendered_query
-        except ValueError:
-            return True
+    def is_advanced_visible(self) -> bool:
+        return self._advanced_button.isChecked()
 
     @property
     def query(self) -> SnapshotQuery:
@@ -210,9 +219,10 @@ class SnapshotPanel(WorkspacePane):
             payload_limit_bytes=self._payload_limit.value(),
         )
 
+    def set_advanced_visible(self, visible: bool) -> None:
+        self._advanced_button.setChecked(visible)
+
     def render_query(self, query: SnapshotQuery) -> None:
-        if query == self._rendered_query and self.has_unsaved_edits:
-            return
         self._rendered_query = query
         self._topic_filter.setText(query.topic_filter)
         self._maximum_age.setText(
@@ -274,11 +284,23 @@ class SnapshotPanel(WorkspacePane):
         for widget in self._action_widgets:
             widget.setEnabled(not busy)
 
+    def _set_advanced_visible(self, visible: bool) -> None:
+        self._advanced_content.setVisible(visible)
+        self._advanced_button.setText(
+            "Hide advanced" if visible else "Advanced"
+        )
+        self._advanced_button.setAccessibleName(
+            "Hide advanced snapshot details"
+            if visible
+            else "Show advanced snapshot details"
+        )
+        self.advanced_changed.emit(visible)
+
     def _update_summary_accessibility(self) -> None:
         summary = ", ".join(
             label.text() for label in self._summary_labels.values()
         )
-        self.setAccessibleDescription(f"{summary}.")
+        self._advanced_button.setAccessibleDescription(f"{summary}.")
 
     def _render_scope_summary(self) -> None:
         query = self._rendered_query
@@ -306,7 +328,6 @@ class SnapshotPanel(WorkspacePane):
 
     def _clear_filters(self) -> None:
         query = SnapshotQuery()
-        self._rendered_query = None
         self.render_query(query)
         self.reset_requested.emit()
 

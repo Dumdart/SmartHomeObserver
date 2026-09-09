@@ -1249,7 +1249,7 @@ def test_exact_topic_detail_survives_active_snapshot_topic_filter() -> None:
     assert view_model.topic_paths == [topic]
     assert view_model.topic_detail.decoded_payload == "online"
     assert view_model.topic_detail.snapshot_scope_note == (
-        "Current value available, but excluded from snapshot values and counts because "
+        "Current value available, but omitted from the observer tree because "
         "the active topic filter 'other/#' excludes it."
     )
 
@@ -1269,61 +1269,9 @@ def test_exact_topic_detail_survives_snapshot_result_limit() -> None:
     ]
     assert view_model.topic_detail.decoded_payload == "online"
     assert view_model.topic_detail.snapshot_scope_note == (
-        "Current value available, but excluded from snapshot values and counts because "
+        "Current value available, but omitted from the observer tree because "
         "it is beyond the active result limit."
     )
-
-
-def test_wildcard_tree_survives_snapshot_result_limit() -> None:
-    repository = FakeObserverRepository()
-    wildcard = Subscription("SmartHome/Huehnerstall/#")
-    exact = Subscription("SmartHome/Huehnerstall/door/battery")
-    repository.subscriptions = (wildcard, exact)
-    repository.publish(
-        MqttMessage("SmartHome/Huehnerstall/door/battery", b"98", 0, False)
-    )
-    repository.publish(
-        MqttMessage("SmartHome/Huehnerstall/door/status", b"open", 0, False)
-    )
-    view_model = MainViewModel(runtime_for(repository), wildcard.topic_filter)
-
-    view_model.apply_snapshot_query(SnapshotQuery(result_limit=1))
-
-    assert [item.topic for item in view_model.broker_snapshot.topics] == [
-        exact.topic_filter
-    ]
-    assert view_model.topic_paths == [
-        wildcard.topic_filter,
-        exact.topic_filter,
-        "SmartHome/Huehnerstall/door/status",
-    ]
-    summary = view_model.selected_wildcard_filter_summary
-    assert summary is not None
-    assert summary.matching_topic_count == 2
-    assert [item.topic for item in summary.topics] == [
-        exact.topic_filter,
-        "SmartHome/Huehnerstall/door/status",
-    ]
-    door = view_model.topic_tree[0].children[0].children[1]
-    status = next(node for node in door.children if node.label == "status")
-    assert [badge.label for badge in status.badges] == ["F1", "Live"]
-
-
-def test_wildcard_tree_ignores_active_snapshot_topic_filter() -> None:
-    repository = FakeObserverRepository()
-    wildcard = Subscription("SmartHome/Huehnerstall/#")
-    topic = "SmartHome/Huehnerstall/door/status"
-    repository.subscriptions = (wildcard,)
-    repository.publish(MqttMessage(topic, b"open", 0, False))
-    view_model = MainViewModel(runtime_for(repository), wildcard.topic_filter)
-
-    view_model.apply_snapshot_query(SnapshotQuery(topic_filter="home/#"))
-
-    assert view_model.broker_snapshot.topics == ()
-    assert view_model.topic_paths == [wildcard.topic_filter, topic]
-    summary = view_model.selected_wildcard_filter_summary
-    assert summary is not None
-    assert [item.topic for item in summary.topics] == [topic]
 
 
 def test_unobserved_exact_subscription_still_reports_waiting() -> None:

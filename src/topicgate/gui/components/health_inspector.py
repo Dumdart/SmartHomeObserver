@@ -1,7 +1,5 @@
 from datetime import timezone
 
-from topicgate.gui.icons import IconName, icon
-
 from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -14,7 +12,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -38,7 +35,6 @@ class HealthInspector(WorkspacePane):
         super().__init__("Health", minimum_hint_width=320)
         self.setObjectName("healthInspector")
         self._view_model = view_model
-        self._advanced_mode = True
         self._selected_topic = ""
         self._selected_expectation = None
 
@@ -47,12 +43,8 @@ class HealthInspector(WorkspacePane):
         self._tabs.tabBar().setObjectName("healthTabs")
         self._tabs.addTab(self._overview_page(), "Overview")
         self._broker_expectations = ExpectationEditor(view_model, "broker")
-        expectations_scroll = QScrollArea()
-        expectations_scroll.setWidgetResizable(True)
-        expectations_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        expectations_scroll.setWidget(self._expectations_page())
-        self._tabs.addTab(expectations_scroll, "Expectations")
-        self._tabs.addTab(self._history_page(), "Failure history")
+        self._tabs.addTab(self._broker_expectations, "Expectations")
+        self._tabs.addTab(self._history_page(), "History")
         self._tabs.addTab(self._changes_page(), "Changes")
         self._tabs.currentChanged.connect(self._tab_changed)
         self.content_layout.addWidget(self._tabs, 1)
@@ -60,95 +52,6 @@ class HealthInspector(WorkspacePane):
         self._view_model.health_changed.connect(self.render)
         self._view_model.configuration_changed.connect(self.render)
         self.render()
-
-    def set_advanced_mode(self, advanced: bool) -> None:
-        self._advanced_mode = advanced
-        self._tabs.blockSignals(True)
-        if not advanced and self._tabs.currentIndex() == 3:
-            self._tabs.setCurrentIndex(0)
-        self._tabs.setTabVisible(3, advanced)
-        self._tabs.setTabEnabled(3, advanced)
-        self._tabs.blockSignals(False)
-        self._delete_history_button.setVisible(advanced)
-        self._history_table.setColumnHidden(4, not advanced)
-        self._broker_expectations.set_advanced_mode(advanced)
-
-    def _expectations_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        self._expectation_scope = QComboBox()
-        self._expectation_scope.setObjectName("healthExpectationScope")
-        self._expectation_scope.addItems(["All expectations", "Broker expectations", "Topic expectations"])
-        self._expectation_scope.currentIndexChanged.connect(self._render_expectation_directory)
-        layout.addWidget(self._expectation_scope)
-        self._expectation_directory = QTableWidget(0, 2)
-        self._expectation_directory.setObjectName("healthExpectationDirectory")
-        self._expectation_directory.setHorizontalHeaderLabels(["Name", "Scope / target"])
-        self._expectation_directory.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._expectation_directory.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._expectation_directory.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._expectation_directory.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self._expectation_directory.itemSelectionChanged.connect(
-            lambda: self._open_rule.setEnabled(self._expectation_directory.currentRow() >= 0)
-        )
-        self._expectation_directory.cellDoubleClicked.connect(lambda *_: self._open_directory_rule())
-        layout.addWidget(self._expectation_directory, 1)
-        self._directory_status = QLabel()
-        self._directory_status.setTextFormat(Qt.TextFormat.PlainText)
-        self._directory_status.setWordWrap(True)
-        layout.addWidget(self._directory_status)
-        self._open_rule = QPushButton("Edit selected expectation")
-        self._open_rule.setIcon(icon(IconName.EDIT))
-        self._open_rule.setEnabled(False)
-        self._open_rule.clicked.connect(self._open_directory_rule)
-        layout.addWidget(self._open_rule)
-        add_broker = QPushButton("Add broker expectation")
-        add_broker.setIcon(icon(IconName.CREATE))
-        add_broker.clicked.connect(self._add_broker_expectation)
-        layout.addWidget(add_broker)
-        layout.addWidget(self._broker_expectations, 1)
-        self._broker_expectations.setVisible(False)
-        return page
-
-    def _add_broker_expectation(self) -> None:
-        self._broker_expectations.setVisible(True)
-        self._broker_expectations.start_new()
-
-    def _render_expectation_directory(self) -> None:
-        from topicgate.core.models.health import TopicTarget
-
-        scope = self._expectation_scope.currentIndex()
-        selected_cell = self._expectation_directory.item(self._expectation_directory.currentRow(), 0)
-        selected = None if selected_cell is None else selected_cell.data(Qt.ItemDataRole.UserRole)
-        rows = tuple(
-            item for item in self._view_model.all_expectations
-            if scope == 0 or (scope == 2) == isinstance(item.target, TopicTarget)
-        )
-        self._expectation_directory.setRowCount(0)
-        self._expectation_directory.setRowCount(len(rows))
-        for row, expectation in enumerate(rows):
-            topic = getattr(expectation.target, "topic", "")
-            cell = QTableWidgetItem(expectation.name)
-            cell.setData(Qt.ItemDataRole.UserRole, (topic, expectation.expectation_id))
-            self._expectation_directory.setItem(row, 0, cell)
-            self._expectation_directory.setItem(row, 1, QTableWidgetItem("Topic: " + topic if topic else "Broker connection"))
-        self._directory_status.setText(
-            f"{self._view_model.active_broker_profile.name} · {len(rows)} configured expectations in this scope. "
-            "Select a rule to edit it. Topic rules open with their topic selected."
-        )
-        self._open_rule.setEnabled(False)
-        for row in range(self._expectation_directory.rowCount()):
-            if self._expectation_directory.item(row, 0).data(Qt.ItemDataRole.UserRole) == selected:
-                self._expectation_directory.selectRow(row)
-                break
-        if scope == 2:
-            self._broker_expectations.setVisible(False)
-
-    def _open_directory_rule(self) -> None:
-        cell = self._expectation_directory.item(self._expectation_directory.currentRow(), 0)
-        if cell is not None:
-            topic, expectation_id = cell.data(Qt.ItemDataRole.UserRole)
-            self.expectation_edit_requested.emit(topic, expectation_id)
 
     def _overview_page(self) -> QWidget:
         page = QWidget()
@@ -184,10 +87,8 @@ class HealthInspector(WorkspacePane):
         self._open_topic = QPushButton("Open topic")
         self._open_topic.setObjectName("openHealthTopicButton")
         self._edit_expectation = QPushButton("Edit expectation")
-        self._edit_expectation.setIcon(icon(IconName.EDIT))
         self._edit_expectation.setObjectName("editHealthExpectationButton")
         self._remove_expectation = QPushButton("Remove")
-        self._remove_expectation.setIcon(icon(IconName.DELETE))
         self._remove_expectation.setObjectName("removeHealthExpectationButton")
         self._remove_expectation.setProperty("danger", True)
         self._view_history = QPushButton("View failure history")
@@ -218,11 +119,10 @@ class HealthInspector(WorkspacePane):
         self._history_status = QComboBox()
         self._history_status.setObjectName("healthHistoryStatus")
         self._history_status.addItems(["all", "active", "recovered"])
-        self._query_button = QPushButton("Search")
+        self._query_button = QPushButton("Apply")
         self._query_button.setObjectName("queryHealthHistoryButton")
         self._query_button.clicked.connect(self.query_history)
         self._delete_history_button = QPushButton("Delete selected")
-        self._delete_history_button.setIcon(icon(IconName.DELETE))
         self._delete_history_button.setObjectName("deleteHealthHistoryButton")
         self._delete_history_button.setProperty("danger", True)
         self._delete_history_button.setEnabled(False)
@@ -326,7 +226,6 @@ class HealthInspector(WorkspacePane):
             self._query_history(cursor)
 
     def render(self) -> None:
-        self._render_expectation_directory()
         summary = self._view_model.health_summary
         counts = f" — {summary.counts}" if summary.counts else ""
         self._status.setText(
@@ -379,8 +278,6 @@ class HealthInspector(WorkspacePane):
 
     def select_broker_expectation(self, expectation_id: object) -> None:
         self._tabs.setCurrentIndex(1)
-        self._expectation_scope.setCurrentIndex(1)
-        self._broker_expectations.setVisible(True)
         self._broker_expectations.select_expectation(expectation_id)
 
     def _render_health_rows(self, table: QTableWidget, rows: tuple) -> None:
@@ -425,8 +322,7 @@ class HealthInspector(WorkspacePane):
         for row, event in enumerate(events):
             values = (
                 str(event.kind).replace("_", " ").title(),
-                next((item.name for item in self._view_model.all_expectations
-                      if str(event.rule_id) in (str(item.expectation_id), item.rule_id)), str(event.rule_id)),
+                event.rule_id,
                 event.matched_topic or "broker",
                 self._transition_label(
                     event.previous_status,
@@ -575,9 +471,6 @@ class HealthInspector(WorkspacePane):
             self._history_message.setText(f"Unable to load failure history: {error}")
 
     def _tab_changed(self, index: int) -> None:
-        if index == 3 and not self._advanced_mode:
-            self._tabs.setCurrentIndex(0)
-            return
         if index == 2:
             self.query_history()
 

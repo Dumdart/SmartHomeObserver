@@ -1,8 +1,6 @@
 from base64 import b64encode
 from uuid import UUID
 
-from topicgate.gui.icons import IconName, icon
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -51,9 +49,6 @@ class ExpectationEditor(QWidget):
         if target_kind not in {"broker", "topic"}:
             raise ValueError("target_kind must be 'broker' or 'topic'")
         self._view_model = view_model
-        self._draft_baseline = None
-        self._draft_context = None
-        self._advanced_mode = True
         self._target_kind = target_kind
         self._selected_id: UUID | None = None
         self._editing = target_kind == "topic"
@@ -65,7 +60,6 @@ class ExpectationEditor(QWidget):
         self._context = QLabel()
         self._context.setObjectName("expectationContext")
         self._context.setWordWrap(True)
-        self._context.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self._context)
         self._result_summary = QLabel()
         self._result_summary.setObjectName("expectationResultSummary")
@@ -93,17 +87,11 @@ class ExpectationEditor(QWidget):
                 QHeaderView.ResizeMode.ResizeToContents,
             )
         self._table.cellClicked.connect(self._select_row)
-        self._table.setMaximumHeight(150)
-        if target_kind == "topic":
-            self._table.setColumnHidden(1, True)
-            self._table.setColumnHidden(2, True)
-        layout.addWidget(self._table)
+        layout.addWidget(self._table, 1)
 
         self._form_container = QWidget()
         self._form_container.setObjectName("expectationEditingControls")
         form = QFormLayout(self._form_container)
-        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self._form = form
         self._name = QLineEdit()
         self._name.setObjectName("expectationName")
@@ -189,21 +177,14 @@ class ExpectationEditor(QWidget):
         self._revision = QLabel()
         self._revision.setObjectName("expectationRevision")
         form.addRow("Details", self._revision)
-        self._options_summary = QLabel()
-        self._options_summary.setObjectName("expectationOptionsSummary")
-        self._options_summary.setWordWrap(True)
-        form.addRow(self._options_summary)
         layout.addWidget(self._form_container)
         self._form_container.setVisible(self._editing)
 
         buttons = QHBoxLayout()
         self._new_button = QPushButton("Add expectation")
-        self._new_button.setIcon(icon(IconName.CREATE))
         self._new_button.setObjectName("addExpectationButton")
         self._delete_button = QPushButton("Delete")
-        self._delete_button.setIcon(icon(IconName.DELETE))
         self._delete_button.setObjectName("deleteExpectationButton")
-        self._delete_button.setProperty("danger", True)
         self._save_button = QPushButton("Save")
         self._save_button.setObjectName("saveExpectationButton")
         self._new_button.clicked.connect(self._new)
@@ -214,61 +195,16 @@ class ExpectationEditor(QWidget):
         buttons.addWidget(self._delete_button)
         buttons.addWidget(self._save_button)
         layout.addLayout(buttons)
-        self._feedback = QLabel()
-        self._feedback.setObjectName("expectationSaveFeedback")
-        self._feedback.setTextFormat(Qt.TextFormat.PlainText)
-        self._feedback.setWordWrap(True)
-        layout.addWidget(self._feedback)
-        layout.addStretch(1)
 
         self._view_model.health_changed.connect(self.render)
         self.render()
 
-    def _form_state(self) -> tuple:
-        return (
-            self._name.text(), self._description.text(),
-            self._enabled.isChecked(), self._log_action.isChecked(),
-            self._store_action.isChecked(), self._condition_kind.currentIndex(),
-            self._expected.currentText(), self._expected_values.toPlainText(),
-            self._encoding.currentIndex(),
-        )
-
-    @property
-    def has_unsaved_edits(self) -> bool:
-        return self._draft_baseline is not None and self._form_state() != self._draft_baseline
-
-    def _remember_draft(self) -> None:
-        self._draft_baseline = self._form_state()
-        self._draft_context = (
-            self._view_model.active_broker_profile.id,
-            self._view_model.topic if self._target_kind == "topic" else "",
-        )
-        self.set_advanced_mode(self._advanced_mode)
-
-    def set_advanced_mode(self, advanced: bool) -> None:
-        self._advanced_mode = advanced
-        for widget in (self._log_action, self._store_action, self._revision, self._description):
-            self._form.setRowVisible(widget, advanced)
-        actions = []
-        if self._log_action.isChecked():
-            actions.append("log transitions")
-        if self._store_action.isChecked():
-            actions.append("save failure history")
-        self._options_summary.setText("On changes: " + (", ".join(actions) or "no actions") + ".")
-        self._options_summary.setVisible(not advanced and len(actions) != 2)
-
     def render(self) -> None:
-        context = (
-            self._view_model.active_broker_profile.id,
-            self._view_model.topic if self._target_kind == "topic" else "",
-        )
-        if self.has_unsaved_edits and self._draft_context == context:
-            return
         if self._target_kind == "topic":
             topic = self._view_model.topic
             available = bool(topic) and "+" not in topic and "#" not in topic
             self._context.setText(
-                f"{self._view_model.active_broker_profile.name} · Topic: {topic}"
+                f"Expectations for {topic}"
                 if available
                 else "Select an exact topic to configure expectations."
             )
@@ -322,7 +258,6 @@ class ExpectationEditor(QWidget):
         self._delete_button.setEnabled(False)
         if self._target_kind == "broker":
             self._form_container.setVisible(self._editing)
-        self._remember_draft()
 
     def _new(self) -> None:
         self._editing = True
@@ -343,10 +278,6 @@ class ExpectationEditor(QWidget):
             self._expected.setCurrentText(ConnectionStatus.CONNECTED.value)
         self._delete_button.setEnabled(False)
         self._name.setFocus(Qt.FocusReason.OtherFocusReason)
-        self._remember_draft()
-
-    def start_new(self) -> None:
-        self._new()
 
     def _select_row(self, row: int, _column: int) -> None:
         if 0 <= row < len(self._expectations):
@@ -371,7 +302,6 @@ class ExpectationEditor(QWidget):
         self._set_expected_values(values)
         self._revision.setText(f"Revision {expectation.revision}")
         self._delete_button.setEnabled(True)
-        self._remember_draft()
 
     def select_expectation(self, expectation_id: object) -> None:
         """Select an expectation from another health presentation."""
@@ -406,11 +336,8 @@ class ExpectationEditor(QWidget):
             QMessageBox.warning(self, "Invalid expectation", str(error))
             return
         self._selected_id = None
-        self._draft_baseline = None
         self._editing = self._target_kind == "topic"
         self.render()
-
-        self._feedback.setText("Expectation saved for this " + self._target_kind + ".")
 
     def _delete(self) -> None:
         if self._selected_id is None:

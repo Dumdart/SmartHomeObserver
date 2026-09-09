@@ -21,7 +21,7 @@ from topicgate.gui.components.workspace_pane import (
     WorkspacePane,
 )
 from topicgate.gui.components.topic_metadata import TopicMetadataPane
-from topicgate.gui.icons import IconName, icon
+from topicgate.gui.icons import edit_icon
 
 
 class TopicDetailsPane(WorkspacePane):
@@ -52,7 +52,7 @@ class TopicDetailsPane(WorkspacePane):
         self._edit_button = QToolButton()
         self._edit_button.setObjectName("topicEditButton")
         self._edit_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
-        self._edit_button.setIcon(icon(IconName.SETTINGS))
+        self._edit_button.setIcon(edit_icon())
         self._edit_button.setIconSize(QSize(14, 14))
         self._edit_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
@@ -77,6 +77,7 @@ class TopicDetailsPane(WorkspacePane):
         mode_layout.addWidget(self._mode_tabs, 1)
         mode_layout.addWidget(self._edit_button)
         self.content_layout.addLayout(mode_layout)
+
         self._payload_content = QWidget()
         self._payload_content.setObjectName("topicPayloadContent")
         payload_layout = QVBoxLayout(self._payload_content)
@@ -137,6 +138,7 @@ class TopicDetailsPane(WorkspacePane):
         payload_layout.addWidget(self._filter_summary, 1)
 
         self._metadata = TopicMetadataPane()
+        self._metadata.advanced_changed.connect(self._set_advanced_visible)
         payload_layout.addWidget(self._metadata)
 
         self._snapshot_scope_note = QLabel()
@@ -264,8 +266,7 @@ class TopicDetailsPane(WorkspacePane):
     def focus_payload(self) -> None:
         self._decoded_payload.setFocus(Qt.FocusReason.OtherFocusReason)
 
-    def set_advanced_mode(self, visible: bool) -> None:
-        self._metadata.set_advanced_mode(visible)
+    def _set_advanced_visible(self, visible: bool) -> None:
         self._advanced_visible = visible
         self._update_raw_visibility()
 
@@ -285,8 +286,6 @@ class TopicDetailsPane(WorkspacePane):
         self._update_raw_visibility()
 
     def _toggle_subscription_editing(self, editing: bool) -> None:
-        self._edit_button.setText("Close settings" if editing else "Settings")
-        self._edit_button.setIcon(icon(IconName.CLOSE if editing else IconName.SETTINGS))
         self._edit_button.setToolTip(
             "Hide topic settings"
             if editing

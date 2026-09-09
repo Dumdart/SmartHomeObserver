@@ -1,8 +1,6 @@
 from collections.abc import Callable
 from uuid import UUID
 
-from topicgate.gui.icons import IconName, icon
-
 from PySide6.QtCore import QObject, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSizePolicy, QToolButton
@@ -213,7 +211,6 @@ class ConnectionControls(QObject):
                 continue
             action = QAction(profile.name, self)
             action.setObjectName("editBrokerProfileAction")
-            action.setIcon(icon(IconName.EDIT))
             action.triggered.connect(
                 lambda _checked=False, profile_id=profile.id: (
                     self.edit_profile_requested.emit(profile_id)

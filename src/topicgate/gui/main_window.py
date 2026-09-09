@@ -5,22 +5,17 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from topicgate.gui.icons import IconName, icon
-
 from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
-    QLabel,
     QMainWindow,
-    QPushButton,
     QMenu,
     QMessageBox,
     QScrollArea,
     QSplitter,
     QStackedWidget,
     QTabWidget,
-    QTabBar,
     QVBoxLayout,
     QWidget,
 )
@@ -34,7 +29,6 @@ from topicgate.gui.components.broker_settings_dialog import (
 )
 from topicgate.gui.components.broker_connection import BrokerConnectionPane
 from topicgate.gui.components.connection_controls import ConnectionControls
-from topicgate.gui.components.event_history_widget import EventHistoryWidget
 from topicgate.gui.components.log_console import LogConsoleDock
 from topicgate.gui.components.expectation_editor import ExpectationEditor
 from topicgate.gui.components.health_inspector import HealthInspector
@@ -90,7 +84,6 @@ class MainWindow(QMainWindow):
         self._diagnostic_profile_editor_window = None
         self._operation_tasks: set[asyncio.Task[None]] = set()
         self._accepting_operations = True
-        self._initial_focus_set = False
         self._settings = settings or QSettings()
         self._stored_observations_dialog: StoredObservationsDialog | None = None
         self._mcp_setup_dialog: McpSetupDialog | None = None
@@ -99,7 +92,6 @@ class MainWindow(QMainWindow):
         ) = None
         if settings is None:
             migrate_legacy_settings(self._settings)
-        self._advanced_mode = self._settings.value("workspace/advancedMode", False, type=bool)
         self.setWindowTitle(view_model.title)
         self.setObjectName("mainWindow")
         self.setStyleSheet(LIGHT_THEME)
@@ -111,7 +103,6 @@ class MainWindow(QMainWindow):
         self._connect_view_model()
         self._restore_state()
         self._render_all()
-        self._apply_advanced_mode()
 
     def _create_workspace(self) -> None:
         self._observer_tree = ObserverTreePane()
@@ -159,6 +150,9 @@ class MainWindow(QMainWindow):
                 message,
             )
         )
+        self._observer_tree.empty_state_action_requested.connect(
+            self._handle_empty_state_action
+        )
         self._onboarding.configure_broker_requested.connect(
             self._show_broker_settings_dialog
         )
@@ -194,11 +188,7 @@ class MainWindow(QMainWindow):
         self._settings_tabs.tabBar().setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._settings_tabs.addTab(self._subscription_settings, "Subscription")
         self._settings_tabs.addTab(self._topic_expectations, "Expectations")
-        settings_scroll = QScrollArea()
-        settings_scroll.setWidgetResizable(True)
-        settings_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        settings_scroll.setWidget(self._settings_tabs)
-        self._context_panel.content_layout.addWidget(settings_scroll)
+        self._context_panel.content_layout.addWidget(self._settings_tabs)
 
         self._observer_workspace = QWidget()
         self._observer_workspace.setObjectName("observerWorkspace")
@@ -212,14 +202,6 @@ class MainWindow(QMainWindow):
         self._topic_inspector.setObjectName("topicInspector")
         inspector_layout = QVBoxLayout(self._topic_inspector)
         inspector_layout.setContentsMargins(0, 0, 0, 0)
-        self._destination_tabs = QTabBar()
-        self._destination_tabs.setObjectName("workspaceDestinations")
-        self._destination_tabs.setAccessibleName("Workspace destination")
-        self._destination_tabs.setExpanding(False)
-        self._destination_tabs.setDrawBase(True)
-        for title in ("Health", "Selected", "Snapshot", "History"):
-            self._destination_tabs.addTab(title)
-        self._destination_tabs.currentChanged.connect(self._navigate)
         self._inspector_stack = QStackedWidget()
         self._inspector_stack.setObjectName("inspectorStack")
         snapshot_scroll = QScrollArea()
@@ -232,15 +214,7 @@ class MainWindow(QMainWindow):
         snapshot_scroll.setWidget(self._snapshot_panel)
         self._inspector_stack.addWidget(snapshot_scroll)
         self._inspector_stack.addWidget(self._topic_details)
-        self._event_history = EventHistoryWidget(self._view_model)
-        self._connect_event_history(self._event_history)
-        history_scroll = QScrollArea()
-        history_scroll.setWidgetResizable(True)
-        history_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        history_scroll.setWidget(self._event_history)
-        self._inspector_stack.addWidget(history_scroll)
         self._inspector_stack.addWidget(self._health_inspector)
-        self._inspector_stack.currentChanged.connect(self._render_destination)
         inspector_layout.addWidget(self._inspector_stack)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -257,7 +231,6 @@ class MainWindow(QMainWindow):
         root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
-        root_layout.addWidget(self._destination_tabs)
         root_layout.addWidget(self._onboarding)
         root_layout.addWidget(self._splitter, 1)
         self.setCentralWidget(root)
@@ -265,42 +238,6 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self._splitter.setSizes([330, 580, 330])
         self._context_panel.setHidden(True)
-        self._render_destination()
-
-    def _render_destination(self) -> None:
-        self._destination_tabs.blockSignals(True)
-        self._destination_tabs.setCurrentIndex(
-            (2, 1, 3, 0)[self._inspector_stack.currentIndex()]
-        )
-        self._destination_tabs.setTabEnabled(1, bool(self._view_model.topic))
-        self._destination_tabs.blockSignals(False)
-
-    def _navigate(self, index: int) -> None:
-        (self._show_health, self._show_topic_details,
-         self._show_snapshot, self._show_history)[index]()
-
-    def _show_history(self) -> None:
-        self._inspector_stack.setCurrentIndex(2)
-        self._context_panel.setHidden(True)
-        self._event_history.select_workspace_broker()
-        self._event_history.request_recording_status()
-
-    def _connect_event_history(self, widget: EventHistoryWidget) -> None:
-        widget.recording_status_requested.connect(
-            lambda broker_id: self._run_async(self._view_model.load_history_settings(broker_id))
-        )
-        widget.recording_requested.connect(
-            lambda broker_id, enabled: self._run_async(
-                self._view_model.set_history_recording(broker_id, enabled)
-            )
-        )
-        widget.query_requested.connect(
-            lambda broker_id, topic_filter, after, before, cursor, limit: self._run_async(
-                self._view_model.query_event_history(
-                    broker_id, topic_filter, after, before, cursor, limit
-                )
-            )
-        )
 
     def _set_context_panel_visible(self, visible: bool) -> None:
         self._context_panel.setVisible(
@@ -308,10 +245,6 @@ class MainWindow(QMainWindow):
         )
 
     def _show_snapshot(self) -> None:
-        if not self._advanced_mode:
-            self._inspector_stack.setCurrentWidget(self._health_inspector)
-            self._context_panel.setHidden(True)
-            return
         self._inspector_stack.setCurrentIndex(0)
         self._context_panel.setHidden(True)
 
@@ -327,7 +260,7 @@ class MainWindow(QMainWindow):
         self._schedule_health_refresh()
 
     def _show_diagnostic_profiles(self) -> None:
-        if not self._advanced_mode or self._diagnostic_profile_editor is None:
+        if self._diagnostic_profile_editor is None:
             return
         broker_id = self._view_model.active_broker_profile.id
         if self._diagnostic_profile_editor_window is None:
@@ -365,23 +298,13 @@ class MainWindow(QMainWindow):
         self._view_model.select_topic(topic)
 
     def _create_actions(self) -> None:
-        self._advanced_indicator = QLabel("Advanced mode")
-        self._advanced_indicator.setObjectName("advancedModeIndicator")
-        self.statusBar().addPermanentWidget(self._advanced_indicator)
-        self._advanced_mode_action = QAction("Advanced mode", self)
-        self._advanced_mode_action.setObjectName("advancedModeAction")
-        self._advanced_mode_action.setCheckable(True)
-        self._advanced_mode_action.setChecked(self._advanced_mode)
-        self._advanced_mode_action.toggled.connect(self._request_advanced_mode)
         self._broker_settings_action = QAction("&Edit broker profile...", self)
-        self._broker_settings_action.setIcon(icon(IconName.EDIT))
         self._broker_settings_action.setObjectName("brokerSettingsAction")
         self._broker_settings_action.setToolTip("Edit the active broker profile")
         self._broker_settings_action.triggered.connect(
             self._show_broker_settings_dialog
         )
         self._add_broker_profile_action = QAction("&Add broker profile...", self)
-        self._add_broker_profile_action.setIcon(icon(IconName.CREATE))
         self._add_broker_profile_action.setObjectName("addBrokerProfileAction")
         self._add_broker_profile_action.triggered.connect(
             self._show_create_broker_profile_dialog
@@ -390,7 +313,6 @@ class MainWindow(QMainWindow):
             "&Delete broker profile...",
             self,
         )
-        self._delete_broker_profile_action.setIcon(icon(IconName.DELETE))
         self._delete_broker_profile_action.setObjectName(
             "deleteBrokerProfileAction"
         )
@@ -439,10 +361,12 @@ class MainWindow(QMainWindow):
         self._broker_connection.disconnect_requested.connect(
             lambda: self._run_async(self._view_model.disconnect_from_broker())
         )
+        self._broker_connection.inspect_snapshot_requested.connect(
+            self._show_snapshot
+        )
         self._broker_connection.health_requested.connect(self._show_health)
 
-        self._add_filter_action = QAction("Add subscription", self)
-        self._add_filter_action.setIcon(icon(IconName.CREATE))
+        self._add_filter_action = QAction("Add filter", self)
         self._add_filter_action.setShortcut("Ctrl+N")
         self._add_filter_action.setToolTip("Add an MQTT subscription filter")
         self._add_filter_action.triggered.connect(self._show_add_filter_dialog)
@@ -472,12 +396,7 @@ class MainWindow(QMainWindow):
         self._health_action.setShortcut("Ctrl+Shift+H")
         self._health_action.triggered.connect(self._show_health)
 
-        self._history_action = QAction("History", self)
-        self._history_action.setObjectName("historyAction")
-        self._history_action.triggered.connect(self._show_history)
-
         self._diagnostic_profiles_action = QAction("Diagnostic profiles...", self)
-        self._diagnostic_profiles_action.setIcon(icon(IconName.SETTINGS))
         self._diagnostic_profiles_action.setObjectName("diagnosticProfilesAction")
         self._diagnostic_profiles_action.setEnabled(
             self._diagnostic_profile_editor is not None
@@ -487,17 +406,14 @@ class MainWindow(QMainWindow):
         )
 
         self._quit_action = QAction("Quit", self)
-        self._quit_action.setIcon(icon(IconName.CLOSE))
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self.close)
 
         self._about_action = QAction("About TopicGate", self)
-        self._about_action.setIcon(icon(IconName.HELP))
         self._about_action.setObjectName("aboutAction")
         self._about_action.triggered.connect(self._show_about_dialog)
 
         self._mcp_setup_action = QAction("MCP setup...", self)
-        self._mcp_setup_action.setIcon(icon(IconName.SETTINGS))
         self._mcp_setup_action.setObjectName("mcpSetupAction")
         self._mcp_setup_action.setToolTip("Show TopicGate MCP client configuration")
         self._mcp_setup_action.setShortcut("Ctrl+Shift+M")
@@ -530,10 +446,7 @@ class MainWindow(QMainWindow):
 
         self.menuBar().addAction(self._stored_observations_action)
         self._view_menu: QMenu = self.menuBar().addMenu("&View")
-        self._view_menu.addAction(self._advanced_mode_action)
-        self._view_menu.addSeparator()
         self._view_menu.addAction(self._health_action)
-        self._view_menu.addAction(self._history_action)
         self._view_menu.addAction(self._diagnostic_profiles_action)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._expand_action)
@@ -552,82 +465,10 @@ class MainWindow(QMainWindow):
             self._log_dock,
         )
         self._console_action.setChecked(self._log_dock.isVisible())
-        self._console_action.toggled.connect(self._set_console_visible)
+        self._console_action.toggled.connect(self._log_dock.setVisible)
         self._log_dock.visibilityChanged.connect(self._console_action.setChecked)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._console_action)
-
-    def _set_console_visible(self, visible: bool) -> None:
-        if self._advanced_mode:
-            self._log_visible_preference = visible
-        self._log_dock.setVisible(visible and self._advanced_mode)
-
-    def _request_advanced_mode(self, advanced: bool) -> None:
-        if advanced == self._advanced_mode:
-            return
-        if not advanced:
-            open_specialist = any(
-                window is not None and window.isVisible()
-                for window in (
-                    self._stored_observations_dialog,
-                    self._diagnostic_profile_editor_window,
-                )
-            )
-            dirty = [
-                name for name, pane in (
-                    ("Snapshot", self._snapshot_panel),
-                    ("Subscription", self._subscription_settings),
-                    ("Topic expectations", self._topic_expectations),
-                    ("Broker expectations", self._health_inspector._broker_expectations),
-                ) if pane.has_unsaved_edits
-            ]
-            if open_specialist or dirty:
-                self._advanced_mode_action.blockSignals(True)
-                self._advanced_mode_action.setChecked(self._advanced_mode)
-                self._advanced_mode_action.blockSignals(False)
-                detail = (
-                    "Close Stored observations and Diagnostic profiles before switching. "
-                    "Resolve any edits there using their existing controls."
-                    if open_specialist else
-                    "Unfinished edits in: " + ", ".join(dirty) + ". Finish applying or saving "
-                    "these edits before switching."
-                )
-                QMessageBox.information(
-                    self, "Advanced mode remains active", detail + " No edits were changed."
-                )
-                return
-        self._advanced_mode = advanced
-        self._apply_advanced_mode()
-        self._settings.setValue("workspace/advancedMode", advanced)
-        self._settings.sync()
-
-    def _apply_advanced_mode(self) -> None:
-        advanced = self._advanced_mode
-        self._destination_tabs.blockSignals(True)
-        self._destination_tabs.setTabVisible(2, advanced)
-        self._destination_tabs.setTabEnabled(2, advanced)
-        self._destination_tabs.blockSignals(False)
-        if not advanced and self._inspector_stack.currentIndex() == 0:
-            self._show_snapshot()
-        for action in (self._stored_observations_action, self._diagnostic_profiles_action,
-                       self._console_action):
-            action.setVisible(advanced)
-            action.setEnabled(advanced)
-        self._diagnostic_profiles_action.setEnabled(
-            advanced and self._diagnostic_profile_editor is not None
-        )
-        self._log_dock.toggleViewAction().setVisible(advanced)
-        self._log_dock.toggleViewAction().setEnabled(advanced)
-        self._log_dock.setVisible(advanced and self._log_visible_preference)
-        self._topic_details.set_advanced_mode(advanced)
-        self._subscription_settings.set_advanced_mode(advanced)
-        self._topic_expectations.set_advanced_mode(advanced)
-        self._health_inspector.set_advanced_mode(advanced)
-        self._event_history.set_advanced_mode(advanced)
-        self._observer_tree.set_advanced_mode(advanced)
-        self._advanced_indicator.setVisible(advanced)
-        self.statusBar().setVisible(advanced)
-        self._render_destination()
 
     def _show_about_dialog(self) -> None:
         AboutDialog(self).open()
@@ -712,6 +553,16 @@ class MainWindow(QMainWindow):
         self._settings.setValue("onboarding/dismissed", True)
         self._onboarding.setVisible(False)
 
+    def _handle_empty_state_action(self, action: str) -> None:
+        if action == "add-filter":
+            self._show_add_filter_dialog()
+        elif action == "connect":
+            self._run_async(self._view_model.connect_to_broker())
+        elif action == "clear-filters":
+            self._reset_snapshot_query()
+        elif action == "observe":
+            self._confirm_reconnect_and_observe()
+
     def _connect_view_model(self) -> None:
         self._view_model.state_changed.connect(self._render_details)
         self._view_model.topics_changed.connect(self._render_tree)
@@ -760,13 +611,21 @@ class MainWindow(QMainWindow):
             self._view_model.snapshot_health
         )
         snapshot = self._view_model.broker_snapshot
-        self._observer_tree.render_scope(
-            self._view_model.snapshot_query, snapshot, len(self._view_model.subscriptions)
+        self._observer_tree.render_empty_state(
+            self._view_model.connection_status,
+            self._view_model.subscriptions,
+            self._snapshot_query_is_filtered(),
+            bool(snapshot.topics)
+            and all(item.source.value == "stored" for item in snapshot.topics),
+            bool(snapshot.topics),
+        )
+        self._observer_tree.set_connection_busy(
+            self._view_model.is_busy("broker")
+            or self._view_model.is_busy("connection")
         )
         self._render_broker_connection()
 
     def _render_details(self) -> None:
-        self._render_destination()
         self._topic_details.render(self._view_model)
         self._topic_expectations.render()
         if (
@@ -794,7 +653,6 @@ class MainWindow(QMainWindow):
         self._render_onboarding()
 
     def _render_broker_profiles(self) -> None:
-        self._event_history.select_workspace_broker()
         self._render_connection_controls()
         self._render_onboarding()
 
@@ -847,6 +705,7 @@ class MainWindow(QMainWindow):
         self._snapshot_panel.set_busy(
             exclusive_busy
         )
+        self._observer_tree.set_connection_busy(exclusive_busy)
         self._stored_observations_action.setEnabled(
             not exclusive_busy
         )
@@ -881,15 +740,27 @@ class MainWindow(QMainWindow):
             ),
         )
 
+    def _snapshot_query_is_filtered(self) -> bool:
+        query = self._view_model.snapshot_query
+        return (
+            query.topic_filter != "#"
+            or query.max_age_seconds is not None
+            or query.result_limit != SnapshotQuery().result_limit
+            or query.payload_limit_bytes != SnapshotQuery().payload_limit_bytes
+        )
+
     def _show_stored_observations(self) -> None:
-        if not self._advanced_mode:
-            return
         dialog = self._stored_observations_dialog
         if dialog is None:
             dialog = StoredObservationsDialog(self._view_model, self)
             dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             dialog.history_settings.load_requested.connect(
                 lambda broker_id: self._run_async(self._view_model.load_history_settings(broker_id))
+            )
+            dialog.event_history.query_requested.connect(
+                lambda broker_id, topic_filter, after, before, cursor, limit: self._run_async(
+                    self._view_model.query_event_history(broker_id, topic_filter, after, before, cursor, limit)
+                )
             )
             dialog.history_settings.save_requested.connect(
                 lambda broker_id, enabled, policy: self._run_async(
@@ -947,6 +818,7 @@ class MainWindow(QMainWindow):
         dialog.raise_()
         dialog.activateWindow()
         self._run_async(self._view_model.load_stored_observations())
+        self._run_async(self._view_model.load_history_settings(dialog.history_settings.broker.currentData()))
 
     async def _preview_and_save_retention_policy(self, policy) -> None:
         preview = await self._view_model.preview_retention_policy(policy)
@@ -1113,7 +985,6 @@ class MainWindow(QMainWindow):
             "Edit broker profile...", QMessageBox.ButtonRole.ActionRole
         )
         close = dialog.addButton(QMessageBox.StandardButton.Close)
-        close.setIcon(icon(IconName.CLOSE))
         dialog.setDefaultButton(close)
         dialog.exec()
         if dialog.clickedButton() is retry:
@@ -1126,14 +997,11 @@ class MainWindow(QMainWindow):
         original_filter: str,
         subscription: Subscription,
     ) -> None:
-        self._run_async(self._save_subscription(original_filter, subscription))
-
-    async def _save_subscription(
-        self, original_filter: str, subscription: Subscription,
-    ) -> None:
-        await self._view_model.update_subscription(original_filter, subscription)
-        self._subscription_settings.show_feedback(
-            f"Subscription applied: {subscription.topic_filter}"
+        self._run_async(
+            self._view_model.update_subscription(
+                original_filter,
+                subscription,
+            )
         )
 
     def _show_add_filter_dialog(self) -> None:
@@ -1199,6 +1067,7 @@ class MainWindow(QMainWindow):
         )
         if result == QMessageBox.StandardButton.Yes:
             self._render_connection_controls(True)
+            self._observer_tree.set_connection_busy(True)
             self._run_async(
                 self._switch_broker_profile(profile_id, next_profile.config)
             )
@@ -1217,6 +1086,7 @@ class MainWindow(QMainWindow):
             if self._view_model.active_broker_profile.id != previous_profile_id:
                 self._show_snapshot()
             self._render_connection_controls()
+            self._observer_tree.set_connection_busy(False)
 
     def _confirm_delete_broker_profile(
         self,
@@ -1248,6 +1118,7 @@ class MainWindow(QMainWindow):
         )
         if result == QMessageBox.StandardButton.Yes:
             self._render_connection_controls(True)
+            self._observer_tree.set_connection_busy(True)
             self._run_async(self._delete_broker_profile(profile.id))
 
     async def _delete_broker_profile(self, profile_id: UUID) -> None:
@@ -1255,6 +1126,7 @@ class MainWindow(QMainWindow):
             await self._view_model.delete_broker_profile(profile_id)
         finally:
             self._render_connection_controls()
+            self._observer_tree.set_connection_busy(False)
 
     def _apply_broker_settings(self, dialog: BrokerSettingsDialog) -> None:
         try:
@@ -1371,13 +1243,16 @@ class MainWindow(QMainWindow):
         if selected_topic:
             self._view_model.select_topic(selected_topic)
         self._restore_snapshot_preferences()
-        self._show_health()
-        self._log_visible_preference = self._settings.value(
+        if self._view_model.topic:
+            self._show_topic_details()
+        else:
+            self._show_snapshot()
+        log_visible = self._settings.value(
             "workspace/logVisible",
             False,
             type=bool,
         )
-        self._log_dock.setVisible(self._log_visible_preference and self._advanced_mode)
+        self._log_dock.setVisible(log_visible)
 
     def _restore_snapshot_preferences(self) -> None:
         topic_filter = str(
@@ -1403,6 +1278,9 @@ class MainWindow(QMainWindow):
             self._view_model.apply_snapshot_query(query)
         except (TypeError, ValueError):
             self._view_model.reset_snapshot_query()
+        self._snapshot_panel.set_advanced_visible(
+            self._settings.value("workspace/snapshotExpanded", False, type=bool)
+        )
 
     def _save_snapshot_preferences(self) -> None:
         query = self._view_model.snapshot_query
@@ -1432,7 +1310,11 @@ class MainWindow(QMainWindow):
         )
         self._settings.setValue(
             "workspace/logVisible",
-            self._log_visible_preference,
+            self._log_dock.isVisible(),
+        )
+        self._settings.setValue(
+            "workspace/snapshotExpanded",
+            self._snapshot_panel.is_advanced_visible,
         )
         self._save_snapshot_preferences()
         self._settings.sync()
@@ -1440,9 +1322,4 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        if not self._initial_focus_set:
-            self._initial_focus_set = True
-            if self._inspector_stack.currentWidget() is self._topic_details:
-                self._topic_details.focus_payload()
-            else:
-                self._observer_tree.focus_search()
+        self._topic_details.focus_payload()

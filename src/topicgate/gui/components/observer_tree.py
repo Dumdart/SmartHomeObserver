@@ -2,6 +2,7 @@ from PySide6.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QFrame,
     QHeaderView,
     QLabel,
     QLineEdit,
@@ -11,10 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from topicgate.core.models.subscription import Subscription
-from topicgate.app.models.broker_snapshot import BrokerSnapshot
-from topicgate.presentation.snapshot_presentation import SnapshotQuery
 from topicgate.gui.components.workspace_pane import WorkspacePane
-from topicgate.gui.icons import IconName, icon
+from topicgate.gui.icons import delete_icon
 from topicgate.presentation.topic_presentation import TopicTreeNode
 
 TOPIC_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -26,43 +25,28 @@ class ObserverTreePane(WorkspacePane):
     topic_selected = Signal(str)
     add_filter_requested = Signal()
     remove_filter_requested = Signal(object)
+    empty_state_action_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__("Observer Tree")
-        heading_icon = QLabel()
-        heading_icon.setPixmap(icon(IconName.OBSERVER_TREE).pixmap(16, 16))
-        self.header_layout.insertWidget(0, heading_icon)
-        self._advanced_mode = True
-        self._scope_context = None
         self._items: dict[str, QStandardItem] = {}
         self._rendering = False
 
         controls = QHBoxLayout()
         self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("Filter displayed topics…")
+        self._search_edit.setPlaceholderText("Search topics...")
         self._search_edit.setAccessibleName("Search observed topics")
         self._search_edit.setClearButtonEnabled(True)
         controls.addWidget(self._search_edit, 1)
 
         add_button = QToolButton()
-        add_button.setText("Add subscription")
-        add_button.setIcon(icon(IconName.CREATE))
-        add_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        add_button.setText("+ Filter")
         add_button.setToolTip("Add an MQTT subscription filter")
         add_button.setAccessibleName("Add MQTT subscription filter")
         add_button.clicked.connect(self.add_filter_requested)
         controls.addWidget(add_button)
 
         self.content_layout.addLayout(controls)
-        self._scope = QLabel()
-        self._scope.setObjectName("observerDisplayScope")
-        self._scope.setTextFormat(Qt.TextFormat.PlainText)
-        self._scope.setWordWrap(True)
-        self._scope.setVisible(False)
-        self._search_status = QLabel()
-        self._search_status.setObjectName("observerSearchStatus")
-        self._search_status.setWordWrap(True)
-        self.content_layout.addWidget(self._search_status)
 
         self._model = QStandardItemModel(self)
         self._model.setHorizontalHeaderLabels(["Topic", "", "State"])
@@ -98,8 +82,24 @@ class ObserverTreePane(WorkspacePane):
         self._tree.clicked.connect(self._topic_activated)
         self._tree.activated.connect(self._topic_activated)
         self._search_edit.textChanged.connect(self._proxy.setFilterFixedString)
-        self._search_edit.textChanged.connect(self._render_search_status)
         self.content_layout.addWidget(self._tree, 1)
+        self._empty_state = QFrame()
+        self._empty_state.setObjectName("observerEmptyState")
+        self._empty_state.setFrameShape(QFrame.Shape.StyledPanel)
+        empty_layout = QHBoxLayout(self._empty_state)
+        self._empty_state_text = QLabel()
+        self._empty_state_text.setObjectName("observerEmptyStateText")
+        self._empty_state_text.setWordWrap(True)
+        empty_layout.addWidget(self._empty_state_text, 1)
+        self._empty_state_action = QToolButton()
+        self._empty_state_action.setObjectName("observerEmptyStateAction")
+        self._empty_state_action.clicked.connect(
+            lambda: self.empty_state_action_requested.emit(
+                str(self._empty_state_action.property("action") or "")
+            )
+        )
+        empty_layout.addWidget(self._empty_state_action)
+        self.content_layout.addWidget(self._empty_state)
 
     def render(
         self,
@@ -133,27 +133,48 @@ class ObserverTreePane(WorkspacePane):
         finally:
             self._rendering = False
 
-    def render_scope(
-        self, query: SnapshotQuery, snapshot: BrokerSnapshot, subscription_count: int,
+    def render_empty_state(
+        self,
+        connection_status: str,
+        subscriptions: tuple[Subscription, ...],
+        query_is_filtered: bool,
+        has_cached_values: bool,
+        has_topics: bool,
     ) -> None:
-        self._scope_context = (query, snapshot, subscription_count)
-        self._scope.clear()
-        self._scope.setVisible(False)
-        self._render_search_status()
-
-    def set_advanced_mode(self, advanced: bool) -> None:
-        self._advanced_mode = advanced
-        if self._scope_context is not None:
-            self.render_scope(*self._scope_context)
-
-    def _render_search_status(self) -> None:
-        active = bool(self._search_edit.text())
-        self._search_status.setText(
-            "No displayed topics match this text. Clear the search to restore the tree."
-            if active and self._proxy.rowCount() == 0
-            else "Text filter active — snapshot counts above are before this text filter."
-        )
-        self._search_status.setVisible(active)
+        """Explain why the workspace has no immediately useful live values."""
+        if has_topics and not has_cached_values:
+            self._empty_state.setVisible(False)
+            return
+        if not subscriptions:
+            message, action, label = (
+                "No subscriptions. Add a filter to observe values.",
+                "add-filter",
+                "Add filter",
+            )
+        elif connection_status == "disconnected":
+            message, action, label = (
+                "Broker disconnected. Stored values may be stale.",
+                "connect",
+                "Connect",
+            )
+        elif query_is_filtered and not has_topics:
+            message, action, label = (
+                "No values match the current snapshot filters. Clear filters or capture a new snapshot.",
+                "clear-filters",
+                "Clear filters",
+            )
+        else:
+            message, action, label = (
+                "No values observed yet. Capture a snapshot after publishers send messages.",
+                "observe",
+                "Reconnect & observe",
+            )
+        self._empty_state_text.setText(message)
+        self._empty_state_text.setAccessibleName(message)
+        self._empty_state_action.setText(label)
+        self._empty_state_action.setAccessibleName(label)
+        self._empty_state_action.setProperty("action", action)
+        self._empty_state.setVisible(True)
 
     def render_tree(
         self,
@@ -174,13 +195,6 @@ class ObserverTreePane(WorkspacePane):
         def apply_node_presentation(items: tuple[TopicTreeNode, ...]) -> None:
             for node in items:
                 item = self._items[node.path]
-                if node.is_subscription:
-                    item.setText(f"Subscription: {node.label}")
-                item.setToolTip(
-                    f"{node.path}\n"
-                    + ("MQTT subscription. " if node.is_subscription else "")
-                    + ("Observed value in this snapshot." if node.is_observed else "No observed value on this row.")
-                )
                 item.setSelectable(node.selectable)
                 item.setData(node.path if node.selectable else None, TOPIC_ROLE)
                 if node.badges:
@@ -206,6 +220,11 @@ class ObserverTreePane(WorkspacePane):
 
     def focus_search(self) -> None:
         self._search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+
+    def set_connection_busy(self, busy: bool) -> None:
+        action = str(self._empty_state_action.property("action") or "")
+        if action in {"connect", "observe"}:
+            self._empty_state_action.setEnabled(not busy)
 
     def _add_topic(self, topic: str) -> None:
         parent = self._model.invisibleRootItem()
@@ -240,7 +259,7 @@ class ObserverTreePane(WorkspacePane):
         button.setObjectName("removeSubscriptionButton")
         button.setFixedSize(24, 18)
         button.setIconSize(QSize(12, 12))
-        button.setIcon(icon(IconName.DELETE))
+        button.setIcon(delete_icon())
         button.setStyleSheet(
             "QToolButton {"
             " background-color: transparent;"

@@ -1,8 +1,6 @@
 from datetime import datetime
 from uuid import UUID
 
-from topicgate.gui.icons import IconName, icon
-
 from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -16,7 +14,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QProgressBar,
-    QScrollArea,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
@@ -33,7 +30,7 @@ from topicgate.core.models.observation_retention_policy import (
 from topicgate.core.models.message_filter import OrderType
 from topicgate.gui.main_view_model import MainViewModel
 from topicgate.gui.components.history_settings_widget import HistorySettingsWidget
-from topicgate.gui.components.quantity_editor import QuantityEditor
+from topicgate.gui.components.event_history_widget import EventHistoryWidget
 from topicgate.presentation.retention_presentation import (
     AgeUnit,
     ByteUnit,
@@ -45,6 +42,25 @@ from topicgate.presentation.retention_presentation import (
 )
 from topicgate.presentation.snapshot_presentation import datetime_label, size_label
 
+
+class _QuantityEditor(QWidget):
+    changed = Signal()
+
+    def __init__(self, units: tuple[str, ...], object_name: str) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.value = QLineEdit()
+        self.value.setObjectName(f"{object_name}Value")
+        self.value.setAccessibleName(f"{object_name} value")
+        self.unit = QComboBox()
+        self.unit.setObjectName(f"{object_name}Unit")
+        self.unit.setAccessibleName(f"{object_name} unit")
+        self.unit.addItems(units)
+        layout.addWidget(self.value, 1)
+        layout.addWidget(self.unit)
+        self.value.textChanged.connect(lambda _text: self.changed.emit())
+        self.unit.currentIndexChanged.connect(lambda _index: self.changed.emit())
 
 
 class StoredObservationsDialog(QDialog):
@@ -69,35 +85,21 @@ class StoredObservationsDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.setObjectName("storedObservationsPages")
         self.tabs.tabBar().setObjectName("storedObservationsPages")
-        self.tabs.tabBar().setExpanding(False)
+        self.tabs.tabBar().setExpanding(True)
         self.tabs.setAccessibleName("Stored observations settings pages")
-        self.tabs.addTab(self._history_page(), "Latest stored values")
+        self.tabs.addTab(self._history_page(), "Latest stored state")
+        self.event_history = EventHistoryWidget(view_model)
+        self.tabs.addTab(self.event_history, "Event history")
         self.tabs.addTab(self._retention_page(), "Latest-state retention")
         self.tabs.addTab(self._cache_page(), "Cache administration")
         self.history_settings = HistorySettingsWidget(view_model)
         self.tabs.addTab(self.history_settings, "History settings")
-        for index in range(self.tabs.count()):
-            page = self.tabs.widget(index)
-            title = self.tabs.tabText(index)
-            self.tabs.removeTab(index)
-            scroll = QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-            scroll.setWidget(page)
-            self.tabs.insertTab(index, scroll, title)
-        self.tabs.setCurrentIndex(0)
-        self.tabs.currentChanged.connect(self._page_changed)
         layout.addWidget(self.tabs)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.button(QDialogButtonBox.StandardButton.Close).setIcon(icon(IconName.CLOSE))
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._view_model.stored_observations_changed.connect(self.render)
         self._view_model.operation_state_changed.connect(self._render_busy)
-
-    def _page_changed(self) -> None:
-        if self.tabs.currentIndex() == 3:
-            self.history_settings.request_load()
 
     def _history_page(self) -> QWidget:
         page = QWidget()
@@ -243,7 +245,7 @@ class StoredObservationsDialog(QDialog):
         self.unlimited_age = QCheckBox("Unlimited")
         self.unlimited_age.setObjectName("unlimitedRetentionAge")
         self.unlimited_age.setAccessibleName("Keep observations indefinitely")
-        self.maximum_age = QuantityEditor(
+        self.maximum_age = _QuantityEditor(
             tuple(item.value for item in AgeUnit),
             "maximumRetentionAge",
         )
@@ -291,7 +293,7 @@ class StoredObservationsDialog(QDialog):
         layout.addLayout(form)
         layout.addStretch(1)
         for widget in self._draft_widgets():
-            if isinstance(widget, QuantityEditor):
+            if isinstance(widget, _QuantityEditor):
                 widget.changed.connect(self._draft_changed)
             elif isinstance(widget, QLineEdit):
                 widget.textChanged.connect(self._draft_changed)
@@ -360,17 +362,13 @@ class StoredObservationsDialog(QDialog):
         layout.addWidget(self.topics)
         actions = QHBoxLayout()
         for text, name, scope in (
-            ("Delete selected cached topics…", "deleteSelectedTopicsButton", "selected_topics"),
+            ("Delete selected topics…", "deleteSelectedTopicsButton", "selected_topics"),
             ("Delete unsubscribed…", "deleteUnsubscribedButton", "unsubscribed"),
             ("Delete broker cache…", "deleteBrokerCacheButton", "broker"),
-            ("Delete cache for all brokers…", "deleteAllCachesButton", "all_brokers"),
+            ("Delete all brokers…", "deleteAllCachesButton", "all_brokers"),
         ):
             button = QPushButton(text)
             button.setObjectName(name)
-            button.setProperty("danger", True)
-            button.setIcon(icon(IconName.DELETE))
-            if scope == "all_brokers":
-                button.setToolTip("Delete latest stored values for all brokers. Broker profiles, event history, and failure history are not deleted.")
             button.setAccessibleName(text.rstrip("…"))
             button.clicked.connect(
                 lambda _checked=False, selected_scope=scope: (
@@ -669,7 +667,7 @@ class StoredObservationsDialog(QDialog):
                 errors[name] = str(error)
                 return 0
 
-        def byte_limit(name: str, editor: QuantityEditor) -> int:
+        def byte_limit(name: str, editor: _QuantityEditor) -> int:
             try:
                 return self._byte_value(editor)
             except ValueError as error:
@@ -815,8 +813,8 @@ class StoredObservationsDialog(QDialog):
         self._add_error_row(form, title, widget, self._field_name(name))
         return widget
 
-    def _byte_field(self, form, title: str, name: str) -> QuantityEditor:
-        widget = QuantityEditor(tuple(item.value for item in ByteUnit), name)
+    def _byte_field(self, form, title: str, name: str) -> _QuantityEditor:
+        widget = _QuantityEditor(tuple(item.value for item in ByteUnit), name)
         widget.setAccessibleName(title)
         widget.value.setAccessibleName(f"{title} value")
         widget.unit.setAccessibleName(f"{title} unit")
@@ -873,14 +871,14 @@ class StoredObservationsDialog(QDialog):
             raise ValueError("Enter a positive integer.")
         return value
 
-    def _byte_value(self, editor: QuantityEditor) -> int:
+    def _byte_value(self, editor: _QuantityEditor) -> int:
         return exact_byte_value(
             self._positive_int(editor.value),
             ByteUnit(editor.unit.currentText()),
         )
 
     @staticmethod
-    def _set_byte_value(editor: QuantityEditor, stored: int) -> None:
+    def _set_byte_value(editor: _QuantityEditor, stored: int) -> None:
         value, unit = display_byte_value(stored)
         editor.value.setText(str(value))
         editor.unit.setCurrentText(unit.value)
