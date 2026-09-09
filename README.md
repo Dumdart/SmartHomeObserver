@@ -76,7 +76,7 @@ default for every broker. **History** and the read-only `get_topic_history` tool
 cursor-paginated receipts with recording and retention limitations. Adjust limits under
 **Stored observations → History settings** independently from latest values; large
 limits may slow startup and queries.
-See [observation history and retention](docs/OBSERVATION_HISTORY.md).
+See [observation history and retention](docs/OBSERVATION_HISTORY.md). 
 
 - **Live** values arrived in the current observation session.
 - **Cached** or **stored** values came from local persistence.
