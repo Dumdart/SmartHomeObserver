@@ -5,6 +5,15 @@ description: Inspect or explicitly refresh TopicGate broker profiles, connection
 
 # Inspect MQTT state
 
+For individual observed receipts, discover and use `get_topic_history` when the
+server exposes it. Recording is disabled by default and enabled per broker in
+Desktop's History settings. Never silently enable it. Pass the returned opaque
+`next_cursor` unchanged with the same broker, topic filter, and time bounds;
+continue even after an empty page with a cursor. Omit the cursor to refresh the
+committed snapshot. Report recording counters, retention horizon, limitations,
+and storage/rendering truncation. Event history is not authoritative broker
+history; latest-state rows and health failure episodes are separate data.
+
 If TopicGate tools are unavailable, stop. Tell the user to install TopicGate, configure the read-only MCP server, and restart the host. Do not substitute another tool.
 
 - For one broker, use `inspect_broker(include_snapshot=false)` for configuration checks. Include snapshots only when values are needed.

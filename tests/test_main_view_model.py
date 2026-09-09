@@ -1236,6 +1236,59 @@ def test_snapshot_query_validation_and_reset_preserve_cached_state() -> None:
     assert view_model.broker_snapshot.topic_filter == "#"
 
 
+def test_exact_topic_detail_survives_active_snapshot_topic_filter() -> None:
+    repository = FakeObserverRepository()
+    topic = "devices/kitchen/status"
+    repository.subscriptions = (Subscription(topic),)
+    repository.publish(MqttMessage(topic, b"online", 1, True))
+    view_model = MainViewModel(runtime_for(repository), topic)
+
+    view_model.apply_snapshot_query(SnapshotQuery(topic_filter="other/#"))
+
+    assert view_model.broker_snapshot.topics == ()
+    assert view_model.topic_paths == [topic]
+    assert view_model.topic_detail.decoded_payload == "online"
+    assert view_model.topic_detail.snapshot_scope_note == (
+        "Current value available, but omitted from the observer tree because "
+        "the active topic filter 'other/#' excludes it."
+    )
+
+
+def test_exact_topic_detail_survives_snapshot_result_limit() -> None:
+    repository = FakeObserverRepository()
+    topic = "devices/z/status"
+    repository.subscriptions = (Subscription(topic),)
+    repository.publish(MqttMessage("devices/a/status", b"first", 0, False))
+    repository.publish(MqttMessage(topic, b"online", 1, True))
+    view_model = MainViewModel(runtime_for(repository), topic)
+
+    view_model.apply_snapshot_query(SnapshotQuery(result_limit=1))
+
+    assert [item.topic for item in view_model.broker_snapshot.topics] == [
+        "devices/a/status"
+    ]
+    assert view_model.topic_detail.decoded_payload == "online"
+    assert view_model.topic_detail.snapshot_scope_note == (
+        "Current value available, but omitted from the observer tree because "
+        "it is beyond the active result limit."
+    )
+
+
+def test_unobserved_exact_subscription_still_reports_waiting() -> None:
+    repository = FakeObserverRepository()
+    topic = "devices/kitchen/status"
+    repository.subscriptions = (Subscription(topic),)
+    view_model = MainViewModel(runtime_for(repository), topic)
+
+    view_model.apply_snapshot_query(SnapshotQuery(topic_filter="other/#"))
+
+    assert view_model.topic_detail.decoded_payload == "Waiting for a message"
+    assert view_model.topic_detail.snapshot_scope_note == ""
+    assert view_model.topic_detail.status_detail == (
+        "No value has been observed for this topic."
+    )
+
+
 async def test_reconnect_observe_failure_preserves_query_and_snapshot() -> None:
     runtime = runtime_for(FakeObserverRepository())
     real_service = BrokerSnapshotService(runtime)

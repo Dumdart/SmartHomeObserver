@@ -67,7 +67,14 @@ Configure a broker in TopicGate Desktop for read-only use, or use the authorized
 
 ## Observation semantics
 
-TopicGate returns the latest value it observed and retained, not authoritative broker history.
+TopicGate snapshots return the latest value it observed and retained, not authoritative broker history.
+
+For individual receipts, enable **Stored observations → History settings → Record new
+events for this broker**. Recording is off by default for every broker. The separate
+**Event history** page and read-only `get_topic_history` tool provide cursor-paginated
+history with recording and retention limitations. Adjust history age/count/size limits
+independently from latest state; large limits may slow startup and queries.
+See [observation history and retention](docs/OBSERVATION_HISTORY.md).
 
 - **Live** values arrived in the current observation session.
 - **Cached** or **stored** values came from local persistence.

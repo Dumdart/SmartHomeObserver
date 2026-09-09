@@ -56,6 +56,13 @@ Always keep the accompanying redaction manifest and report warnings, omissions,
 and truncation metadata when sharing the result."""
 
 _SNAPSHOT_INSTRUCTIONS += "\n\n" + UNTRUSTED_MQTT_DATA_INSTRUCTIONS
+_SNAPSHOT_INSTRUCTIONS += """\n\nget_topic_history passively reads append-only
+TopicGate-observed event history, not authoritative broker history. Recording is
+opt-in per broker. Disabled recording still allows reading retained events.
+Use the returned opaque next_cursor with the same broker, filter and time bounds;
+even an empty page can have a continuation. A new query without a cursor starts
+a new committed snapshot. Inspect recording counters, retention, limitations,
+and storage/rendering truncation before drawing completeness conclusions."""
 
 READ_ONLY_SERVER_INSTRUCTIONS = """This server is running in read-only mode. Only
 passive inspection tools are available; MQTT activation, connection control,

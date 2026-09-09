@@ -68,6 +68,7 @@ class TopicDetail:
     ingestion_truncation_label: str
     rendering_truncated: bool
     rendering_truncation_label: str
+    snapshot_scope_note: str = ""
 
 
 @dataclass(frozen=True)

@@ -32,4 +32,4 @@ class ObservationRetentionProcessor:
         limit = policy.max_payload_bytes_per_topic
         if len(message.payload) <= limit:
             return message
-        return replace(message, payload=message.payload[:limit])
+        return replace(message, payload=message.payload[:limit], is_truncated=True)

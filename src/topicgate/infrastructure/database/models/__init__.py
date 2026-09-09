@@ -1,4 +1,13 @@
 from topicgate.infrastructure.database.models.app_config_row import AppConfigRow
+from topicgate.infrastructure.database.models.history_retention_row import (
+    HistoryRetentionPolicyRow, HistoryRetentionStateRow,
+)
+from topicgate.infrastructure.database.models.history_recording_row import (
+    HistoryRecordingSessionRow, HistoryRecordingSettingRow,
+)
+from topicgate.infrastructure.database.models.observation_event_row import (
+    ObservationEventRow, ObservationHistoryClockRow,
+)
 from topicgate.infrastructure.database.models.broker_profile_row import (
     BrokerProfileRow,
 )
@@ -25,6 +34,12 @@ from topicgate.infrastructure.database.models.subscription_row import (
 )
 
 __all__ = [
+    "HistoryRetentionPolicyRow",
+    "HistoryRetentionStateRow",
+    "HistoryRecordingSessionRow",
+    "HistoryRecordingSettingRow",
+    "ObservationEventRow",
+    "ObservationHistoryClockRow",
     "AppConfigRow",
     "BrokerProfileRow",
     "ExpectationFailureRow",

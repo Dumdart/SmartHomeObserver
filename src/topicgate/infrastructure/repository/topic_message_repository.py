@@ -174,6 +174,10 @@ class TopicMessageRepository(
     def record_message(self, entry: TopicMessage) -> None:
         """Record a canonical, already-processed topic update."""
         entry = self._prepare_message(entry)
+        self.record_canonical_message(entry)
+
+    def record_canonical_message(self, entry: TopicMessage) -> None:
+        """Record a receipt already transformed by the application recorder."""
         self._set_current(entry, ObservationStatus.LIVE)
         self._enqueue(entry)
 

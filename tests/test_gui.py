@@ -1,6 +1,6 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -121,6 +121,34 @@ from topicgate.presentation.snapshot_presentation import (
 from topicgate.presentation.topic_presentation import build_topic_tree
 
 
+@pytest.fixture(autouse=True)
+def isolated_gui_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[QSettings]:
+    settings = QSettings(
+        str(tmp_path / "topicgate-gui.ini"),
+        QSettings.Format.IniFormat,
+    )
+    legacy_settings = QSettings(
+        str(tmp_path / "topicgate-legacy.ini"),
+        QSettings.Format.IniFormat,
+    )
+    settings.clear()
+    legacy_settings.clear()
+    monkeypatch.setattr(
+        "topicgate.gui.main_window.QSettings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "topicgate.gui.settings_migration.QSettings",
+        lambda *_args: legacy_settings,
+    )
+    yield settings
+    settings.clear()
+    legacy_settings.clear()
+
+
 def test_diagnostic_profile_rules_show_only_the_selected_draft() -> None:
     application = QApplication.instance() or QApplication([])
     broker_id = uuid4()
@@ -220,12 +248,11 @@ def test_health_action_opens_broker_scoped_inspector() -> None:
     application.processEvents()
 
 
-def test_settings_and_health_tabs_reuse_visible_topic_tab_style() -> None:
+def test_settings_health_and_observation_tabs_reuse_visible_topic_tab_style() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
-    window = MainWindow(
-        MainViewModel(runtime_for(repository), repository.state.topic)
-    )
+    view_model = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(view_model)
     settings_tabs = window.findChild(QTabWidget, "topicSettingsTabs")
     assert settings_tabs is not None
     assert settings_tabs.tabBar().objectName() == "topicSettingsTabs"
@@ -244,8 +271,19 @@ def test_settings_and_health_tabs_reuse_visible_topic_tab_style() -> None:
     health_tabs = inspector.findChild(QTabWidget, "healthTabs")
     assert health_tabs is not None
     assert health_tabs.tabBar().objectName() == "healthTabs"
+
+    observations = StoredObservationsDialog(view_model, window)
+    observation_tabs = observations.findChild(
+        QTabWidget,
+        "storedObservationsPages",
+    )
+    assert observation_tabs is not None
+    assert observation_tabs.tabBar().objectName() == "storedObservationsPages"
+    assert observation_tabs.tabBar().expanding()
     assert "QTabBar#topicSettingsTabs::tab:selected" in LIGHT_THEME
     assert "QTabBar#healthTabs::tab:selected" in LIGHT_THEME
+    assert "QTabBar#storedObservationsPages::tab:selected" in LIGHT_THEME
+    observations.close()
     window.close()
     application.processEvents()
 
@@ -460,6 +498,35 @@ def test_about_dialog_describes_persisted_observations() -> None:
         "stored observations captured before the current connection or "
         "observation window."
     )
+    dialog.deleteLater()
+    application.processEvents()
+
+
+def test_history_settings_are_opt_in_and_validate_limits() -> None:
+    from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
+    from topicgate.core.models.history_recording import HistoryRecordingStatus
+
+    application = QApplication.instance() or QApplication([])
+    view_model = MainViewModel(runtime_for(FakeGuiRepository()))
+    dialog = StoredObservationsDialog(view_model)
+    settings = dialog.history_settings
+    broker = settings.broker.currentData()
+    view_model.history_settings_broker = broker
+    view_model.history_policy = HistoryRetentionPolicy()
+    view_model.history_recording_status = HistoryRecordingStatus(broker)
+    view_model.history_usage = HistoryUsage(broker, 0, 0, None, None, 0)
+    settings.render()
+    assert not settings.enabled.isChecked()
+    assert settings.save.isEnabled()
+    assert "slow startup and history queries" in settings.findChild(QLabel, "historyRetentionWarning").text()
+    settings.fields["prune_batch_size"].setText("501")
+    assert not settings.save.isEnabled()
+    assert "500" in settings.error.text()
+    settings.fields["prune_batch_size"].setText("50")
+    assert settings.draft_policy().prune_batch_size == 50
+    assert settings.draft_policy().max_events_per_topic is None
+    settings.broker.setCurrentIndex(1)
+    assert not settings.save.isEnabled()
     dialog.deleteLater()
     application.processEvents()
 
@@ -1383,6 +1450,72 @@ def test_inspector_starts_from_selection_and_owns_one_snapshot() -> None:
 
     snapshot_window.close()
     details_window.close()
+    application.processEvents()
+
+
+def test_default_window_uses_isolated_settings(
+    isolated_gui_settings: QSettings,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())))
+
+    window._apply_snapshot_query(SnapshotQuery("home/#", None, 9, 256))
+    isolated_gui_settings.sync()
+
+    assert window._settings is isolated_gui_settings
+    assert isolated_gui_settings.format() == QSettings.Format.IniFormat
+    assert isolated_gui_settings.value(
+        "workspace/snapshotTopicFilter"
+    ) == "home/#"
+    assert "Dumdart" not in isolated_gui_settings.fileName()
+    window.close()
+    application.processEvents()
+
+
+def test_selected_subscription_shows_value_omitted_from_observer_tree() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    topic = repository.state.topic
+    repository.subscriptions = (Subscription(topic),)
+    view_model = MainViewModel(runtime_for(repository), topic)
+    window = MainWindow(view_model)
+
+    window._apply_snapshot_query(SnapshotQuery(topic_filter="other/#"))
+
+    tree = window.findChild(QTreeView, "observerTree")
+    notice = window.findChild(QLabel, "topicSnapshotScopeNotice")
+    decoded = window.findChild(QPlainTextEdit, "decodedPayload")
+    selected_node = next(
+        node for node in view_model.topic_tree if node.path == "home"
+    ).children[0].children[0]
+    assert selected_node.path == topic
+    assert not selected_node.is_observed
+    assert tree is not None
+    assert decoded.toPlainText() == "21.5"
+    assert notice.isVisibleTo(window)
+    assert "active topic filter 'other/#'" in notice.text()
+    window.close()
+    application.processEvents()
+
+
+def test_snapshot_panel_exposes_active_bounds_and_omitted_count() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    view_model = MainViewModel(runtime_for(repository))
+    window = MainWindow(view_model)
+
+    window._apply_snapshot_query(SnapshotQuery("home/#", None, 1, 256))
+    window._snapshot_panel.render_health(
+        replace(view_model.snapshot_health, omitted_count=1)
+    )
+
+    scope = window.findChild(QLabel, "snapshotScopeSummary")
+    assert scope.isVisibleTo(window)
+    assert scope.text() == (
+        "Active snapshot bounds: filter home/#, result limit 1, "
+        "1 topic(s) omitted"
+    )
+    window.close()
     application.processEvents()
 
 

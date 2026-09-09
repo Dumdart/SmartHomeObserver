@@ -3,6 +3,7 @@ import binascii
 from base64 import b64decode
 from contextlib import asynccontextmanager
 from contextlib import suppress
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator
@@ -11,6 +12,9 @@ from uuid import UUID, uuid4
 from PySide6.QtCore import QObject, Signal
 
 from topicgate.app.models.broker_snapshot import BrokerSnapshot
+from topicgate.app.models.topic_history import TopicHistoryResult
+from topicgate.core.models.history_retention import HistoryRetentionPolicy, HistoryUsage
+from topicgate.core.models.history_recording import HistoryRecordingStatus
 from topicgate.app.models.expectation_health_report import (
     ExpectationHealthReport,
     FailureHistoryResult,
@@ -68,6 +72,7 @@ from topicgate.presentation.snapshot_presentation import (
     BrokerSnapshotHealth,
     SnapshotQuery,
     snapshot_health,
+    topic_omission_notice,
 )
 from topicgate.presentation.topic_presentation import (
     TopicDetail,
@@ -98,6 +103,8 @@ class MainViewModel(QObject):
     """Presentation state for the observer workspace."""
 
     state_changed = Signal()
+    history_settings_changed = Signal()
+    event_history_changed = Signal()
     topics_changed = Signal()
     subscriptions_changed = Signal()
     connection_changed = Signal()
@@ -124,6 +131,16 @@ class MainViewModel(QObject):
     ) -> None:
         super().__init__()
         self._runtime = runtime
+        self.history_policy: HistoryRetentionPolicy | None = None
+        self.history_recording_status: HistoryRecordingStatus | None = None
+        self.history_usage: HistoryUsage | None = None
+        self.history_settings_broker: UUID | None = None
+        self.history_settings_error: str | None = None
+        self._history_settings_generation = 0
+        self.event_history_result: TopicHistoryResult | None = None
+        self.event_history_error: str | None = None
+        self.event_history_busy = False
+        self._event_history_generation = 0
         self._snapshot_service = snapshot_service or BrokerSnapshotService(runtime)
         self._mcp_setup_service = mcp_setup_service
         self._health_query_service = health_query_service
@@ -520,11 +537,33 @@ class MainViewModel(QObject):
             ),
             None,
         )
-        return topic_detail(
+        scope_note = ""
+        if (
+            state is None
+            and self._topic
+            and not mqtt_filter_has_wildcards(self._topic)
+        ):
+            exact_snapshot = self._snapshot_service.build_resolved_current(
+                self.active_broker_profile,
+                topic_filter=self._topic,
+                result_limit=1,
+                payload_limit_bytes=self._snapshot_query.payload_limit_bytes,
+            )
+            state = next(iter(exact_snapshot.topics), None)
+            if state is not None:
+                scope_note = topic_omission_notice(
+                    self._snapshot_query,
+                    self._snapshot,
+                    state,
+                )
+        detail = topic_detail(
             state,
             self._topic,
             self._snapshot.dropped_message_count,
         )
+        if scope_note:
+            return replace(detail, snapshot_scope_note=scope_note)
+        return detail
 
     @property
     def received_at(self) -> str:
@@ -864,6 +903,79 @@ class MainViewModel(QObject):
 
     def reset_snapshot_query(self) -> None:
         self.apply_snapshot_query(SnapshotQuery())
+
+    def invalidate_event_history(self, *_args) -> None:
+        self._event_history_generation += 1
+        self.event_history_result = None
+        self.event_history_error = None
+        self.event_history_busy = False
+        self.event_history_changed.emit()
+
+    async def query_event_history(
+        self, broker_id: UUID, topic_filter: str, after: datetime | None = None,
+        before: datetime | None = None, cursor: str | None = None, limit: int = 100,
+    ) -> None:
+        self.invalidate_event_history()
+        generation = self._event_history_generation
+        self.event_history_busy = True
+        self.event_history_changed.emit()
+        try:
+            result = await asyncio.to_thread(
+                self._runtime.get_topic_history, broker_id, topic_filter,
+                after=after, before=before, cursor=cursor, limit=limit,
+            )
+        except Exception as error:
+            if generation == self._event_history_generation:
+                self.event_history_error = (
+                    str(error) if isinstance(error, ValueError)
+                    else "Event history could not be read. Refresh to retry."
+                )
+        else:
+            if generation == self._event_history_generation:
+                self.event_history_result = result
+        finally:
+            if generation == self._event_history_generation:
+                self.event_history_busy = False
+                self.event_history_changed.emit()
+
+    async def load_history_settings(self, broker_id: UUID) -> None:
+        self._history_settings_generation += 1
+        generation = self._history_settings_generation
+        try:
+            policy, status, usage = await asyncio.gather(
+                asyncio.to_thread(self._runtime.get_history_retention_policy),
+                asyncio.to_thread(self._runtime.get_history_recording_status, broker_id),
+                asyncio.to_thread(self._runtime.get_history_usage, broker_id),
+            )
+        except Exception:
+            if generation == self._history_settings_generation:
+                self.history_settings_broker = broker_id
+                self.history_settings_error = "History settings could not be loaded. Reload to retry."
+                self.history_policy = None
+                self.history_settings_changed.emit()
+            return
+        if generation != self._history_settings_generation:
+            return
+        self.history_settings_broker = broker_id
+        self.history_policy, self.history_recording_status, self.history_usage = policy, status, usage
+        self.history_settings_error = None
+        self.history_settings_changed.emit()
+
+    async def save_history_settings(
+        self, broker_id: UUID, enabled: bool, policy: HistoryRetentionPolicy,
+    ) -> None:
+        async with self._operation("history-settings"):
+            try:
+                await asyncio.to_thread(self._runtime.update_history_retention_policy, policy)
+                await asyncio.to_thread(self._runtime.set_history_recording, broker_id, enabled)
+            except Exception:
+                await self.load_history_settings(broker_id)
+                self.history_settings_error = (
+                    "History settings could not be fully applied. Current saved values were reloaded."
+                )
+                self.history_settings_changed.emit()
+                return
+            await self.load_history_settings(broker_id)
 
     async def load_stored_observations(
         self,
