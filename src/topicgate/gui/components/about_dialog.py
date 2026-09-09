@@ -1,5 +1,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
@@ -89,6 +91,7 @@ class AboutDialog(QDialog):
         layout.addWidget(license_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setIcon(icon(IconName.CLOSE))
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 

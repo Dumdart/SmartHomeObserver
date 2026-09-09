@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
@@ -156,9 +158,6 @@ class MainWindow(QMainWindow):
                 "Invalid snapshot controls",
                 message,
             )
-        )
-        self._observer_tree.empty_state_action_requested.connect(
-            self._handle_empty_state_action
         )
         self._onboarding.configure_broker_requested.connect(
             self._show_broker_settings_dialog
@@ -375,12 +374,14 @@ class MainWindow(QMainWindow):
         self._advanced_mode_action.setChecked(self._advanced_mode)
         self._advanced_mode_action.toggled.connect(self._request_advanced_mode)
         self._broker_settings_action = QAction("&Edit broker profile...", self)
+        self._broker_settings_action.setIcon(icon(IconName.EDIT))
         self._broker_settings_action.setObjectName("brokerSettingsAction")
         self._broker_settings_action.setToolTip("Edit the active broker profile")
         self._broker_settings_action.triggered.connect(
             self._show_broker_settings_dialog
         )
         self._add_broker_profile_action = QAction("&Add broker profile...", self)
+        self._add_broker_profile_action.setIcon(icon(IconName.CREATE))
         self._add_broker_profile_action.setObjectName("addBrokerProfileAction")
         self._add_broker_profile_action.triggered.connect(
             self._show_create_broker_profile_dialog
@@ -389,6 +390,7 @@ class MainWindow(QMainWindow):
             "&Delete broker profile...",
             self,
         )
+        self._delete_broker_profile_action.setIcon(icon(IconName.DELETE))
         self._delete_broker_profile_action.setObjectName(
             "deleteBrokerProfileAction"
         )
@@ -440,6 +442,7 @@ class MainWindow(QMainWindow):
         self._broker_connection.health_requested.connect(self._show_health)
 
         self._add_filter_action = QAction("Add subscription", self)
+        self._add_filter_action.setIcon(icon(IconName.CREATE))
         self._add_filter_action.setShortcut("Ctrl+N")
         self._add_filter_action.setToolTip("Add an MQTT subscription filter")
         self._add_filter_action.triggered.connect(self._show_add_filter_dialog)
@@ -474,6 +477,7 @@ class MainWindow(QMainWindow):
         self._history_action.triggered.connect(self._show_history)
 
         self._diagnostic_profiles_action = QAction("Diagnostic profiles...", self)
+        self._diagnostic_profiles_action.setIcon(icon(IconName.SETTINGS))
         self._diagnostic_profiles_action.setObjectName("diagnosticProfilesAction")
         self._diagnostic_profiles_action.setEnabled(
             self._diagnostic_profile_editor is not None
@@ -483,14 +487,17 @@ class MainWindow(QMainWindow):
         )
 
         self._quit_action = QAction("Quit", self)
+        self._quit_action.setIcon(icon(IconName.CLOSE))
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self.close)
 
         self._about_action = QAction("About TopicGate", self)
+        self._about_action.setIcon(icon(IconName.HELP))
         self._about_action.setObjectName("aboutAction")
         self._about_action.triggered.connect(self._show_about_dialog)
 
         self._mcp_setup_action = QAction("MCP setup...", self)
+        self._mcp_setup_action.setIcon(icon(IconName.SETTINGS))
         self._mcp_setup_action.setObjectName("mcpSetupAction")
         self._mcp_setup_action.setToolTip("Show TopicGate MCP client configuration")
         self._mcp_setup_action.setShortcut("Ctrl+Shift+M")
@@ -705,16 +712,6 @@ class MainWindow(QMainWindow):
         self._settings.setValue("onboarding/dismissed", True)
         self._onboarding.setVisible(False)
 
-    def _handle_empty_state_action(self, action: str) -> None:
-        if action == "add-filter":
-            self._show_add_filter_dialog()
-        elif action == "connect":
-            self._run_async(self._view_model.connect_to_broker())
-        elif action == "clear-filters":
-            self._reset_snapshot_query()
-        elif action == "observe":
-            self._confirm_reconnect_and_observe()
-
     def _connect_view_model(self) -> None:
         self._view_model.state_changed.connect(self._render_details)
         self._view_model.topics_changed.connect(self._render_tree)
@@ -765,18 +762,6 @@ class MainWindow(QMainWindow):
         snapshot = self._view_model.broker_snapshot
         self._observer_tree.render_scope(
             self._view_model.snapshot_query, snapshot, len(self._view_model.subscriptions)
-        )
-        self._observer_tree.render_empty_state(
-            self._view_model.connection_status,
-            self._view_model.subscriptions,
-            self._snapshot_query_is_filtered(),
-            bool(snapshot.topics)
-            and all(item.source.value == "stored" for item in snapshot.topics),
-            bool(snapshot.topics),
-        )
-        self._observer_tree.set_connection_busy(
-            self._view_model.is_busy("broker")
-            or self._view_model.is_busy("connection")
         )
         self._render_broker_connection()
 
@@ -862,7 +847,6 @@ class MainWindow(QMainWindow):
         self._snapshot_panel.set_busy(
             exclusive_busy
         )
-        self._observer_tree.set_connection_busy(exclusive_busy)
         self._stored_observations_action.setEnabled(
             not exclusive_busy
         )
@@ -895,15 +879,6 @@ class MainWindow(QMainWindow):
                 self._view_model.is_busy("broker")
                 or self._view_model.is_busy("connection")
             ),
-        )
-
-    def _snapshot_query_is_filtered(self) -> bool:
-        query = self._view_model.snapshot_query
-        return (
-            query.topic_filter != "#"
-            or query.max_age_seconds is not None
-            or query.result_limit != SnapshotQuery().result_limit
-            or query.payload_limit_bytes != SnapshotQuery().payload_limit_bytes
         )
 
     def _show_stored_observations(self) -> None:
@@ -1138,6 +1113,7 @@ class MainWindow(QMainWindow):
             "Edit broker profile...", QMessageBox.ButtonRole.ActionRole
         )
         close = dialog.addButton(QMessageBox.StandardButton.Close)
+        close.setIcon(icon(IconName.CLOSE))
         dialog.setDefaultButton(close)
         dialog.exec()
         if dialog.clickedButton() is retry:
@@ -1223,7 +1199,6 @@ class MainWindow(QMainWindow):
         )
         if result == QMessageBox.StandardButton.Yes:
             self._render_connection_controls(True)
-            self._observer_tree.set_connection_busy(True)
             self._run_async(
                 self._switch_broker_profile(profile_id, next_profile.config)
             )
@@ -1242,7 +1217,6 @@ class MainWindow(QMainWindow):
             if self._view_model.active_broker_profile.id != previous_profile_id:
                 self._show_snapshot()
             self._render_connection_controls()
-            self._observer_tree.set_connection_busy(False)
 
     def _confirm_delete_broker_profile(
         self,
@@ -1274,7 +1248,6 @@ class MainWindow(QMainWindow):
         )
         if result == QMessageBox.StandardButton.Yes:
             self._render_connection_controls(True)
-            self._observer_tree.set_connection_busy(True)
             self._run_async(self._delete_broker_profile(profile.id))
 
     async def _delete_broker_profile(self, profile_id: UUID) -> None:
@@ -1282,7 +1255,6 @@ class MainWindow(QMainWindow):
             await self._view_model.delete_broker_profile(profile_id)
         finally:
             self._render_connection_controls()
-            self._observer_tree.set_connection_busy(False)
 
     def _apply_broker_settings(self, dialog: BrokerSettingsDialog) -> None:
         try:

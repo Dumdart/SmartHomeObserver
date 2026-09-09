@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -87,6 +89,7 @@ class StoredObservationsDialog(QDialog):
         self.tabs.currentChanged.connect(self._page_changed)
         layout.addWidget(self.tabs)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setIcon(icon(IconName.CLOSE))
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._view_model.stored_observations_changed.connect(self.render)
@@ -365,6 +368,7 @@ class StoredObservationsDialog(QDialog):
             button = QPushButton(text)
             button.setObjectName(name)
             button.setProperty("danger", True)
+            button.setIcon(icon(IconName.DELETE))
             if scope == "all_brokers":
                 button.setToolTip("Delete latest stored values for all brokers. Broker profiles, event history, and failure history are not deleted.")
             button.setAccessibleName(text.rstrip("…"))

@@ -1,3 +1,5 @@
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
@@ -136,6 +138,7 @@ class McpSetupDialog(QDialog):
         layout.addWidget(self._diagnostic_result)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setIcon(icon(IconName.CLOSE))
         buttons.rejected.connect(self.accept)
         layout.addWidget(buttons)
         self._render_configuration()

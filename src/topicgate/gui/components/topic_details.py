@@ -21,7 +21,7 @@ from topicgate.gui.components.workspace_pane import (
     WorkspacePane,
 )
 from topicgate.gui.components.topic_metadata import TopicMetadataPane
-from topicgate.gui.icons import edit_icon
+from topicgate.gui.icons import IconName, icon
 
 
 class TopicDetailsPane(WorkspacePane):
@@ -52,7 +52,7 @@ class TopicDetailsPane(WorkspacePane):
         self._edit_button = QToolButton()
         self._edit_button.setObjectName("topicEditButton")
         self._edit_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
-        self._edit_button.setIcon(edit_icon())
+        self._edit_button.setIcon(icon(IconName.SETTINGS))
         self._edit_button.setIconSize(QSize(14, 14))
         self._edit_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
@@ -286,6 +286,7 @@ class TopicDetailsPane(WorkspacePane):
 
     def _toggle_subscription_editing(self, editing: bool) -> None:
         self._edit_button.setText("Close settings" if editing else "Settings")
+        self._edit_button.setIcon(icon(IconName.CLOSE if editing else IconName.SETTINGS))
         self._edit_button.setToolTip(
             "Hide topic settings"
             if editing

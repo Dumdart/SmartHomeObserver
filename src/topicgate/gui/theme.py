@@ -10,8 +10,6 @@ QWidget { color: #202124; font-size: 13px; }
 QMainWindow, QDialog, QMessageBox, QWidget#applicationRoot { background: #f3f4f6; color: #202124; }
 QMessageBox QLabel { background: transparent; color: #202124; }
 QFrame[workspacePane="true"] { background: #ffffff; border: 1px solid #c8ced6; border-radius: 8px; }
-QFrame#observerEmptyState { background: #f8fafc; border: 1px solid #c8ced6; border-radius: 5px; }
-QLabel#observerEmptyStateText { background: transparent; color: #4b5563; }
 QWidget#snapshotPanel, QWidget#snapshotAdvancedContent, QGroupBox#snapshotControls, QGroupBox#snapshotHealthPanel { background: #ffffff; }
 QScrollArea#snapshotPanelScrollArea { background: #ffffff; }
 QToolButton#snapshotAdvancedButton { border: 0; background: transparent; font-weight: 650; padding: 3px 5px; }

@@ -18,7 +18,7 @@ from topicgate.gui.components.workspace_pane import (
     WORKSPACE_CONTROL_HEIGHT,
     WorkspacePane,
 )
-from topicgate.gui.icons import delete_icon, edit_icon
+from topicgate.gui.icons import IconName, icon
 from topicgate.gui.main_view_model import MainViewModel
 
 
@@ -62,7 +62,7 @@ class _BrokerProfileRow(QWidget):
 
         edit_button = QToolButton()
         edit_button.setObjectName("editBrokerProfileButton")
-        edit_button.setIcon(edit_icon())
+        edit_button.setIcon(icon(IconName.EDIT))
         edit_button.setIconSize(QSize(14, 14))
         edit_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
@@ -75,7 +75,7 @@ class _BrokerProfileRow(QWidget):
 
         delete_button = QToolButton()
         delete_button.setObjectName("deleteBrokerProfileButton")
-        delete_button.setIcon(delete_icon())
+        delete_button.setIcon(icon(IconName.DELETE))
         delete_button.setIconSize(QSize(14, 14))
         delete_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
@@ -161,7 +161,7 @@ class BrokerProfileSelector(QComboBox):
             self._popup_menu.addAction(action)
 
         self._popup_menu.addSeparator()
-        add_action = QAction("+ Add Broker", self._popup_menu)
+        add_action = QAction(icon(IconName.CREATE), "Add Broker", self._popup_menu)
         add_action.setObjectName("addBrokerProfilePaneAction")
         add_action.setEnabled(self._management_enabled)
         add_action.triggered.connect(self._request_add)
@@ -210,6 +210,11 @@ class BrokerConnectionPane(WorkspacePane):
 
     def __init__(self) -> None:
         super().__init__("Broker", minimum_hint_width=320)
+        heading_icon = QLabel()
+        heading_icon.setObjectName("brokerHeadingIcon")
+        heading_icon.setAccessibleName("Broker")
+        heading_icon.setPixmap(icon(IconName.BROKER).pixmap(16, 16))
+        self.header_layout.insertWidget(0, heading_icon)
         self.setObjectName("brokerConnectionPane")
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -225,11 +230,13 @@ class BrokerConnectionPane(WorkspacePane):
             QSizePolicy.Policy.Maximum,
             QSizePolicy.Policy.Preferred,
         )
-        self.header_layout.setStretch(0, 0)
+        self.header_layout.setStretch(1, 0)
         self.header_layout.addWidget(self._status_badge)
         self.header_layout.addStretch(1)
         self._manage_button = QToolButton()
         self._manage_button.setText("Profiles…")
+        self._manage_button.setIcon(icon(IconName.SETTINGS))
+        self._manage_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._manage_button.setAccessibleName("Manage broker profiles")
         self._manage_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
         self._manage_button.setSizePolicy(

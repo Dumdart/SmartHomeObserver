@@ -2,7 +2,6 @@ from PySide6.QtCore import QModelIndex, QSize, QSortFilterProxyModel, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QFrame,
     QHeaderView,
     QLabel,
     QLineEdit,
@@ -15,7 +14,7 @@ from topicgate.core.models.subscription import Subscription
 from topicgate.app.models.broker_snapshot import BrokerSnapshot
 from topicgate.presentation.snapshot_presentation import SnapshotQuery
 from topicgate.gui.components.workspace_pane import WorkspacePane
-from topicgate.gui.icons import delete_icon
+from topicgate.gui.icons import IconName, icon
 from topicgate.presentation.topic_presentation import TopicTreeNode
 
 TOPIC_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -27,10 +26,12 @@ class ObserverTreePane(WorkspacePane):
     topic_selected = Signal(str)
     add_filter_requested = Signal()
     remove_filter_requested = Signal(object)
-    empty_state_action_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__("Observer Tree")
+        heading_icon = QLabel()
+        heading_icon.setPixmap(icon(IconName.OBSERVER_TREE).pixmap(16, 16))
+        self.header_layout.insertWidget(0, heading_icon)
         self._advanced_mode = True
         self._scope_context = None
         self._items: dict[str, QStandardItem] = {}
@@ -45,6 +46,8 @@ class ObserverTreePane(WorkspacePane):
 
         add_button = QToolButton()
         add_button.setText("Add subscription")
+        add_button.setIcon(icon(IconName.CREATE))
+        add_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         add_button.setToolTip("Add an MQTT subscription filter")
         add_button.setAccessibleName("Add MQTT subscription filter")
         add_button.clicked.connect(self.add_filter_requested)
@@ -97,23 +100,6 @@ class ObserverTreePane(WorkspacePane):
         self._search_edit.textChanged.connect(self._proxy.setFilterFixedString)
         self._search_edit.textChanged.connect(self._render_search_status)
         self.content_layout.addWidget(self._tree, 1)
-        self._empty_state = QFrame()
-        self._empty_state.setObjectName("observerEmptyState")
-        self._empty_state.setFrameShape(QFrame.Shape.StyledPanel)
-        empty_layout = QHBoxLayout(self._empty_state)
-        self._empty_state_text = QLabel()
-        self._empty_state_text.setObjectName("observerEmptyStateText")
-        self._empty_state_text.setWordWrap(True)
-        empty_layout.addWidget(self._empty_state_text, 1)
-        self._empty_state_action = QToolButton()
-        self._empty_state_action.setObjectName("observerEmptyStateAction")
-        self._empty_state_action.clicked.connect(
-            lambda: self.empty_state_action_requested.emit(
-                str(self._empty_state_action.property("action") or "")
-            )
-        )
-        empty_layout.addWidget(self._empty_state_action)
-        self.content_layout.addWidget(self._empty_state)
 
     def render(
         self,
@@ -146,56 +132,6 @@ class ObserverTreePane(WorkspacePane):
             self.select_topic(selected_topic)
         finally:
             self._rendering = False
-
-    def render_empty_state(
-        self,
-        connection_status: str,
-        subscriptions: tuple[Subscription, ...],
-        query_is_filtered: bool,
-        has_cached_values: bool,
-        has_topics: bool,
-    ) -> None:
-        """Explain why the workspace has no immediately useful live values."""
-        if has_topics and not has_cached_values:
-            self._empty_state.setVisible(False)
-            return
-        if not subscriptions:
-            message, action, label = (
-                "No subscriptions. Add a subscription to observe values.",
-                "add-filter",
-                "Add subscription",
-            )
-        elif connection_status == "disconnected":
-            message, action, label = (
-                "Broker disconnected. Stored values may be stale.",
-                "connect",
-                "Connect",
-            )
-        elif has_topics and has_cached_values:
-            message, action, label = (
-                "These snapshot values were restored from storage. Their receive times may predate this connection.",
-                "",
-                "",
-            )
-        elif query_is_filtered and not has_topics:
-            message, action, label = (
-                "No observed values match the current snapshot filters.",
-                "clear-filters",
-                "Clear filters",
-            )
-        else:
-            message, action, label = (
-                "No observed values in this snapshot. Subscription rows describe what TopicGate listens for; they are not received values.",
-                "observe",
-                "Reconnect & observe",
-            )
-        self._empty_state_text.setText(message)
-        self._empty_state_text.setAccessibleName(message)
-        self._empty_state_action.setText(label)
-        self._empty_state_action.setAccessibleName(label)
-        self._empty_state_action.setProperty("action", action)
-        self._empty_state_action.setVisible(bool(action))
-        self._empty_state.setVisible(True)
 
     def render_scope(
         self, query: SnapshotQuery, snapshot: BrokerSnapshot, subscription_count: int,
@@ -271,11 +207,6 @@ class ObserverTreePane(WorkspacePane):
     def focus_search(self) -> None:
         self._search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
 
-    def set_connection_busy(self, busy: bool) -> None:
-        action = str(self._empty_state_action.property("action") or "")
-        if action in {"connect", "observe"}:
-            self._empty_state_action.setEnabled(not busy)
-
     def _add_topic(self, topic: str) -> None:
         parent = self._model.invisibleRootItem()
         partial_path: list[str] = []
@@ -309,7 +240,7 @@ class ObserverTreePane(WorkspacePane):
         button.setObjectName("removeSubscriptionButton")
         button.setFixedSize(24, 18)
         button.setIconSize(QSize(12, 12))
-        button.setIcon(delete_icon())
+        button.setIcon(icon(IconName.DELETE))
         button.setStyleSheet(
             "QToolButton {"
             " background-color: transparent;"

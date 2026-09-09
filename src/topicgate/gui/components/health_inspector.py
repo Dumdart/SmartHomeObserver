@@ -1,5 +1,7 @@
 from datetime import timezone
 
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -96,10 +98,12 @@ class HealthInspector(WorkspacePane):
         self._directory_status.setWordWrap(True)
         layout.addWidget(self._directory_status)
         self._open_rule = QPushButton("Edit selected expectation")
+        self._open_rule.setIcon(icon(IconName.EDIT))
         self._open_rule.setEnabled(False)
         self._open_rule.clicked.connect(self._open_directory_rule)
         layout.addWidget(self._open_rule)
         add_broker = QPushButton("Add broker expectation")
+        add_broker.setIcon(icon(IconName.CREATE))
         add_broker.clicked.connect(self._add_broker_expectation)
         layout.addWidget(add_broker)
         layout.addWidget(self._broker_expectations, 1)
@@ -180,8 +184,10 @@ class HealthInspector(WorkspacePane):
         self._open_topic = QPushButton("Open topic")
         self._open_topic.setObjectName("openHealthTopicButton")
         self._edit_expectation = QPushButton("Edit expectation")
+        self._edit_expectation.setIcon(icon(IconName.EDIT))
         self._edit_expectation.setObjectName("editHealthExpectationButton")
         self._remove_expectation = QPushButton("Remove")
+        self._remove_expectation.setIcon(icon(IconName.DELETE))
         self._remove_expectation.setObjectName("removeHealthExpectationButton")
         self._remove_expectation.setProperty("danger", True)
         self._view_history = QPushButton("View failure history")
@@ -216,6 +222,7 @@ class HealthInspector(WorkspacePane):
         self._query_button.setObjectName("queryHealthHistoryButton")
         self._query_button.clicked.connect(self.query_history)
         self._delete_history_button = QPushButton("Delete selected")
+        self._delete_history_button.setIcon(icon(IconName.DELETE))
         self._delete_history_button.setObjectName("deleteHealthHistoryButton")
         self._delete_history_button.setProperty("danger", True)
         self._delete_history_button.setEnabled(False)

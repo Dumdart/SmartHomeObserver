@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from uuid import UUID
 
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -30,8 +32,10 @@ class DiagnosticProfileEditorWindow(QDialog):
         self._profiles.setObjectName("diagnosticProfileSelector")
         self._profiles.currentIndexChanged.connect(self._select_profile)
         self._new = QPushButton("Create")
+        self._new.setIcon(icon(IconName.CREATE))
         self._copy = QPushButton("Copy")
         self._delete = QPushButton("Delete")
+        self._delete.setIcon(icon(IconName.DELETE))
         self._new.clicked.connect(self._create)
         self._copy.clicked.connect(self._copy_profile)
         self._delete.clicked.connect(self._delete_profile)

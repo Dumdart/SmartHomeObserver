@@ -1,6 +1,8 @@
 from base64 import b64encode
 from uuid import UUID
 
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -196,8 +198,10 @@ class ExpectationEditor(QWidget):
 
         buttons = QHBoxLayout()
         self._new_button = QPushButton("Add expectation")
+        self._new_button.setIcon(icon(IconName.CREATE))
         self._new_button.setObjectName("addExpectationButton")
         self._delete_button = QPushButton("Delete")
+        self._delete_button.setIcon(icon(IconName.DELETE))
         self._delete_button.setObjectName("deleteExpectationButton")
         self._delete_button.setProperty("danger", True)
         self._save_button = QPushButton("Save")

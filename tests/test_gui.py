@@ -398,7 +398,7 @@ async def test_subscription_apply_feedback_and_small_window_layout(tmp_path) -> 
     application.processEvents()
 
 
-def test_observer_filter_explains_subscription_rows_and_hidden_values(tmp_path) -> None:
+def test_observer_filter_keeps_subscription_rows_and_hidden_values(tmp_path) -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
     repository.subscriptions = (Subscription(repository.state.topic),)
@@ -408,7 +408,7 @@ def test_observer_filter_explains_subscription_rows_and_hidden_values(tmp_path) 
     pane = window._observer_tree
     assert "subscriptions" not in pane._scope.text()
     assert "0 values" not in pane._scope.text()
-    assert pane._empty_state_text.text() == "No observed values match the current snapshot filters."
+    assert pane.findChild(QWidget, "observerEmptyState") is None
     assert "excluded from snapshot values and counts" in vm.topic_detail.snapshot_scope_note
     assert any(item.text().startswith("Subscription:") for item in pane._items.values())
     pane._search_edit.setText("does-not-exist")
@@ -1584,7 +1584,7 @@ def test_default_window_uses_isolated_settings(
     application.processEvents()
 
 
-def test_selected_subscription_shows_value_omitted_from_observer_tree() -> None:
+def test_selected_subscription_shows_value_outside_snapshot_scope() -> None:
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
     topic = repository.state.topic
@@ -1602,7 +1602,7 @@ def test_selected_subscription_shows_value_omitted_from_observer_tree() -> None:
         node for node in view_model.topic_tree if node.path == "home"
     ).children[0].children[0]
     assert selected_node.path == topic
-    assert not selected_node.is_observed
+    assert selected_node.is_observed
     assert tree is not None
     assert decoded.toPlainText() == "21.5"
     assert notice.isVisibleTo(window)
@@ -1739,23 +1739,7 @@ async def test_reconnect_preserves_the_current_inspector_view() -> None:
     application.processEvents()
 
 
-def test_observer_empty_states_explain_recovery_actions() -> None:
-    application = QApplication.instance() or QApplication([])
-    pane = ObserverTreePane()
-    pane.render_empty_state("disconnected", (), False, False, False)
-    assert "No subscriptions" in pane.findChild(QLabel, "observerEmptyStateText").text()
-
-    pane.render_empty_state("connected", (Subscription("devices/#"),), True, False, False)
-    action = pane.findChild(QToolButton, "observerEmptyStateAction")
-    assert pane.findChild(QLabel, "observerEmptyStateText").text() == (
-        "No observed values match the current snapshot filters."
-    )
-    assert action.text() == "Clear filters"
-    pane.deleteLater()
-    application.processEvents()
-
-
-def test_light_theme_keeps_dialog_and_empty_state_text_readable() -> None:
+def test_light_theme_keeps_dialog_text_readable() -> None:
     application = QApplication.instance() or QApplication([])
 
     apply_light_theme(application)
@@ -1765,8 +1749,6 @@ def test_light_theme_keeps_dialog_and_empty_state_text_readable() -> None:
     assert palette.color(QPalette.ColorRole.WindowText).name() == "#202124"
     assert palette.color(QPalette.ColorRole.ButtonText).name() == "#202124"
     assert "QMessageBox QLabel" in LIGHT_THEME
-    assert "QFrame#observerEmptyState" in LIGHT_THEME
-    assert "QLabel#observerEmptyStateText" in LIGHT_THEME
     assert "QTabBar#topicDetailsMode::tab" in LIGHT_THEME
     assert "QTabBar#topicDetailsMode::tab:selected" in LIGHT_THEME
     assert "color: #ffffff; background: #405d7a" in LIGHT_THEME
@@ -2209,6 +2191,8 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
     assert window.findChild(QPushButton, "brokerDisconnectButton") is None
     assert management.isEnabled()
     assert management.accessibleName() == "Manage broker profiles"
+    assert not management.icon().isNull()
+    assert not window.findChild(QLabel, "brokerHeadingIcon").pixmap().isNull()
     assert window.findChild(QPushButton, "inspectSnapshotButton") is None
     window.resize(window.minimumSize())
     window.show()
@@ -2254,7 +2238,7 @@ def test_compact_broker_pane_exposes_switching_and_connection_actions() -> None:
         assert delete_button.text() == "Delete"
         assert not delete_button.icon().isNull()
     assert window.findChild(QAction, "addBrokerProfilePaneAction").text() == (
-        "+ Add Broker"
+        "Add Broker"
     )
     assert window.findChild(QToolButton, "manageBrokerProfilesButton") is None
     assert window.findChild(QMenu, "editBrokerProfilePaneMenu") is None
@@ -3557,3 +3541,19 @@ def test_simplified_expectation_save_preserves_hidden_configuration() -> None:
     assert values["name"] == "Renamed temperature"
     window.close()
     application.processEvents()
+
+
+@pytest.mark.parametrize("size", [12, 16, 24, 32, 48])
+def test_shared_control_icons_render_at_desktop_sizes(size: int) -> None:
+    from topicgate.gui.icons import IconName, icon
+
+    app = QApplication.instance() or QApplication([])
+    for name in IconName:
+        for mode in (icon(name).Mode.Normal, icon(name).Mode.Disabled):
+            pixmap = icon(name).pixmap(size, size, mode)
+            assert not pixmap.isNull(), name
+            image = pixmap.toImage()
+            assert any(
+                image.pixelColor(x, y).alpha() > 0
+                for x in range(image.width()) for y in range(image.height())
+            ), name

@@ -1,3 +1,5 @@
+from topicgate.gui.icons import IconName, icon
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
@@ -32,6 +34,7 @@ class OnboardingPanel(QFrame):
         title_row.addWidget(title)
         title_row.addStretch(1)
         dismiss = QPushButton("Dismiss")
+        dismiss.setIcon(icon(IconName.CLOSE))
         dismiss.setObjectName("dismissFirstRunChecklistButton")
         dismiss.setAccessibleName("Dismiss first-run checklist")
         dismiss.clicked.connect(self.dismissed.emit)

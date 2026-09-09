@@ -20,7 +20,10 @@ from topicgate.app.models.expectation_health_report import (
     FailureHistoryResult,
     FindingCheckpoint,
 )
-from topicgate.app.services.broker_snapshot_service import BrokerSnapshotService
+from topicgate.app.services.broker_snapshot_service import (
+    MAX_SNAPSHOT_RESULT_LIMIT,
+    BrokerSnapshotService,
+)
 from topicgate.app.services.expectation_management_service import (
     ExpectationManagementService,
 )
@@ -154,6 +157,7 @@ class MainViewModel(QObject):
         self._snapshot_query = SnapshotQuery()
         self._topic = topic
         self._snapshot = self._build_current_snapshot(self._snapshot_query)
+        self._observer_snapshot = self._build_observer_snapshot()
         self._message_task: asyncio.Task[None] | None = None
         self._connection_task: asyncio.Task[None] | None = None
         self._connection_status = self._status_text(
@@ -786,17 +790,17 @@ class MainViewModel(QObject):
     @property
     def topic_paths(self) -> list[str]:
         subscriptions = self.subscriptions
-        observed_topics = tuple(item.topic for item in self._snapshot.topics)
+        observed_topics = tuple(item.topic for item in self._observer_snapshot.topics)
         return list(collect_visible_topic_paths(subscriptions, observed_topics))
 
     @property
     def topic_tree(self) -> tuple[TopicTreeNode, ...]:
-        observed_topics = tuple(item.topic for item in self._snapshot.topics)
+        observed_topics = tuple(item.topic for item in self._observer_snapshot.topics)
         return build_topic_tree(
             self.topic_paths,
             self.subscriptions,
             observed_topics,
-            self._snapshot.topics,
+            self._observer_snapshot.topics,
         )
 
     @property
@@ -820,7 +824,7 @@ class MainViewModel(QObject):
         subscription = self.selected_wildcard_subscription
         if subscription is None:
             return None
-        return wildcard_filter_summary(subscription, self._snapshot.topics)
+        return wildcard_filter_summary(subscription, self._observer_snapshot.topics)
 
     async def start(self) -> None:
         """Load the current value and listen for messages and connection changes."""
@@ -881,6 +885,7 @@ class MainViewModel(QObject):
     ) -> None:
         """Capture current state without reconnecting or mutating observations."""
         self._snapshot = self._build_current_snapshot(self._snapshot_query)
+        self._observer_snapshot = self._build_observer_snapshot()
         snapshot_topics = {item.topic for item in self._snapshot.topics}
         if (
             clear_invalid_selection
@@ -1348,6 +1353,7 @@ class MainViewModel(QObject):
                 self._preserve_snapshot_during_observation = False
             self._snapshot_query = selected_query
             self._snapshot = snapshot
+            self._observer_snapshot = self._build_observer_snapshot()
             if self._topic and self._topic not in self.topic_paths:
                 self._topic = ""
             self._connection_status = snapshot.connection_status
@@ -1606,4 +1612,12 @@ class MainViewModel(QObject):
             max_age_seconds=query.max_age_seconds,
             result_limit=query.result_limit,
             payload_limit_bytes=query.payload_limit_bytes,
+        )
+
+    def _build_observer_snapshot(self) -> BrokerSnapshot:
+        return self._snapshot_service.build_current(
+            self.active_broker_profile.id,
+            topic_filter="#",
+            result_limit=MAX_SNAPSHOT_RESULT_LIMIT,
+            payload_limit_bytes=0,
         )
