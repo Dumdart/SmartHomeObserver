@@ -9,6 +9,7 @@ from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
+    QLabel,
     QMainWindow,
     QPushButton,
     QMenu,
@@ -96,6 +97,7 @@ class MainWindow(QMainWindow):
         ) = None
         if settings is None:
             migrate_legacy_settings(self._settings)
+        self._advanced_mode = self._settings.value("workspace/advancedMode", False, type=bool)
         self.setWindowTitle(view_model.title)
         self.setObjectName("mainWindow")
         self.setStyleSheet(LIGHT_THEME)
@@ -107,6 +109,7 @@ class MainWindow(QMainWindow):
         self._connect_view_model()
         self._restore_state()
         self._render_all()
+        self._apply_advanced_mode()
 
     def _create_workspace(self) -> None:
         self._observer_tree = ObserverTreePane()
@@ -309,6 +312,10 @@ class MainWindow(QMainWindow):
         )
 
     def _show_snapshot(self) -> None:
+        if not self._advanced_mode:
+            self._inspector_stack.setCurrentWidget(self._health_inspector)
+            self._context_panel.setHidden(True)
+            return
         self._inspector_stack.setCurrentIndex(0)
         self._context_panel.setHidden(True)
 
@@ -324,7 +331,7 @@ class MainWindow(QMainWindow):
         self._schedule_health_refresh()
 
     def _show_diagnostic_profiles(self) -> None:
-        if self._diagnostic_profile_editor is None:
+        if not self._advanced_mode or self._diagnostic_profile_editor is None:
             return
         broker_id = self._view_model.active_broker_profile.id
         if self._diagnostic_profile_editor_window is None:
@@ -362,6 +369,14 @@ class MainWindow(QMainWindow):
         self._view_model.select_topic(topic)
 
     def _create_actions(self) -> None:
+        self._advanced_indicator = QLabel("Advanced mode")
+        self._advanced_indicator.setObjectName("advancedModeIndicator")
+        self.statusBar().addPermanentWidget(self._advanced_indicator)
+        self._advanced_mode_action = QAction("Advanced mode", self)
+        self._advanced_mode_action.setObjectName("advancedModeAction")
+        self._advanced_mode_action.setCheckable(True)
+        self._advanced_mode_action.setChecked(self._advanced_mode)
+        self._advanced_mode_action.toggled.connect(self._request_advanced_mode)
         self._broker_settings_action = QAction("&Edit broker profile...", self)
         self._broker_settings_action.setObjectName("brokerSettingsAction")
         self._broker_settings_action.setToolTip("Edit the active broker profile")
@@ -507,6 +522,8 @@ class MainWindow(QMainWindow):
 
         self.menuBar().addAction(self._stored_observations_action)
         self._view_menu: QMenu = self.menuBar().addMenu("&View")
+        self._view_menu.addAction(self._advanced_mode_action)
+        self._view_menu.addSeparator()
         self._view_menu.addAction(self._health_action)
         self._view_menu.addAction(self._diagnostic_profiles_action)
         self._view_menu.addSeparator()
@@ -526,10 +543,82 @@ class MainWindow(QMainWindow):
             self._log_dock,
         )
         self._console_action.setChecked(self._log_dock.isVisible())
-        self._console_action.toggled.connect(self._log_dock.setVisible)
+        self._console_action.toggled.connect(self._set_console_visible)
         self._log_dock.visibilityChanged.connect(self._console_action.setChecked)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._console_action)
+
+    def _set_console_visible(self, visible: bool) -> None:
+        if self._advanced_mode:
+            self._log_visible_preference = visible
+        self._log_dock.setVisible(visible and self._advanced_mode)
+
+    def _request_advanced_mode(self, advanced: bool) -> None:
+        if advanced == self._advanced_mode:
+            return
+        if not advanced:
+            open_specialist = any(
+                window is not None and window.isVisible()
+                for window in (
+                    self._stored_observations_dialog,
+                    self._diagnostic_profile_editor_window,
+                )
+            )
+            dirty = [
+                name for name, pane in (
+                    ("Snapshot", self._snapshot_panel),
+                    ("Subscription", self._subscription_settings),
+                    ("Topic expectations", self._topic_expectations),
+                    ("Broker expectations", self._health_inspector._broker_expectations),
+                ) if pane.has_unsaved_edits
+            ]
+            if open_specialist or dirty:
+                self._advanced_mode_action.blockSignals(True)
+                self._advanced_mode_action.setChecked(self._advanced_mode)
+                self._advanced_mode_action.blockSignals(False)
+                detail = (
+                    "Close Stored observations and Diagnostic profiles before switching. "
+                    "Resolve any edits there using their existing controls."
+                    if open_specialist else
+                    "Unfinished edits in: " + ", ".join(dirty) + ". Finish applying or saving "
+                    "these edits before switching."
+                )
+                QMessageBox.information(
+                    self, "Advanced mode remains active", detail + " No edits were changed."
+                )
+                return
+        self._advanced_mode = advanced
+        self._apply_advanced_mode()
+        self._settings.setValue("workspace/advancedMode", advanced)
+        self._settings.sync()
+
+    def _apply_advanced_mode(self) -> None:
+        advanced = self._advanced_mode
+        self._destination_tabs.blockSignals(True)
+        self._destination_tabs.setTabVisible(2, advanced)
+        self._destination_tabs.setTabEnabled(2, advanced)
+        self._destination_tabs.blockSignals(False)
+        if not advanced and self._inspector_stack.currentIndex() == 0:
+            self._show_snapshot()
+        for action in (self._stored_observations_action, self._diagnostic_profiles_action,
+                       self._console_action):
+            action.setVisible(advanced)
+            action.setEnabled(advanced)
+        self._diagnostic_profiles_action.setEnabled(
+            advanced and self._diagnostic_profile_editor is not None
+        )
+        self._log_dock.toggleViewAction().setVisible(advanced)
+        self._log_dock.toggleViewAction().setEnabled(advanced)
+        self._log_dock.setVisible(advanced and self._log_visible_preference)
+        self._topic_details.set_advanced_mode(advanced)
+        self._subscription_settings.set_advanced_mode(advanced)
+        self._topic_expectations.set_advanced_mode(advanced)
+        self._health_inspector.set_advanced_mode(advanced)
+        self._event_history.set_advanced_mode(advanced)
+        self._observer_tree.set_advanced_mode(advanced)
+        self._advanced_indicator.setVisible(advanced)
+        self.statusBar().setVisible(advanced)
+        self._render_destination()
 
     def _show_about_dialog(self) -> None:
         AboutDialog(self).open()
@@ -816,6 +905,8 @@ class MainWindow(QMainWindow):
         )
 
     def _show_stored_observations(self) -> None:
+        if not self._advanced_mode:
+            return
         dialog = self._stored_observations_dialog
         if dialog is None:
             dialog = StoredObservationsDialog(self._view_model, self)
@@ -1307,12 +1398,12 @@ class MainWindow(QMainWindow):
             self._view_model.select_topic(selected_topic)
         self._restore_snapshot_preferences()
         self._show_health()
-        log_visible = self._settings.value(
+        self._log_visible_preference = self._settings.value(
             "workspace/logVisible",
             False,
             type=bool,
         )
-        self._log_dock.setVisible(log_visible)
+        self._log_dock.setVisible(self._log_visible_preference and self._advanced_mode)
 
     def _restore_snapshot_preferences(self) -> None:
         topic_filter = str(
@@ -1338,9 +1429,6 @@ class MainWindow(QMainWindow):
             self._view_model.apply_snapshot_query(query)
         except (TypeError, ValueError):
             self._view_model.reset_snapshot_query()
-        self._snapshot_panel.set_advanced_visible(
-            self._settings.value("workspace/snapshotExpanded", False, type=bool)
-        )
 
     def _save_snapshot_preferences(self) -> None:
         query = self._view_model.snapshot_query
@@ -1370,11 +1458,7 @@ class MainWindow(QMainWindow):
         )
         self._settings.setValue(
             "workspace/logVisible",
-            self._log_dock.isVisible(),
-        )
-        self._settings.setValue(
-            "workspace/snapshotExpanded",
-            self._snapshot_panel.is_advanced_visible,
+            self._log_visible_preference,
         )
         self._save_snapshot_preferences()
         self._settings.sync()

@@ -86,6 +86,12 @@ See [observation history and retention](docs/OBSERVATION_HISTORY.md).
 
 Only the active broker is continuously connected. Check freshness, provenance, truncation, dropped-message count, and completeness when interpreting a snapshot.
 
+Desktop starts with a simplified workspace. **View → Advanced mode** restores
+snapshot diagnostics, storage administration, diagnostic profiles and specialist
+fields. History and recording remain available in both modes. This saved GUI
+preference does not change broker operations or MCP authorization; see the
+[desktop mode matrix](docs/DESKTOP_UX.md#simplified-and-advanced-mode).
+
 ## Health expectations
 
 Define what healthy means for your broker and topics: an established connection, an expected status payload, a temperature range, or a maximum observation age. Desktop brings broker checks, topic checks, evidence, and failure history into one health view.

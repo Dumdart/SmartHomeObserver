@@ -22,6 +22,7 @@ class EventHistoryWidget(QWidget):
     def __init__(self, view_model: MainViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._view_model = view_model
+        self._advanced_mode = True
         self._recording_pending = False
         self._recording_loading = False
         layout = QVBoxLayout(self)
@@ -32,7 +33,7 @@ class EventHistoryWidget(QWidget):
             "Message receipts saved while recording was enabled, oldest first. "
             "Earlier gaps cannot be recovered. Health failure history and latest stored values are separate."
         )
-        form = QFormLayout()
+        form = self._form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.broker = QComboBox()
         self.broker.setObjectName("eventHistoryBroker")
@@ -229,12 +230,7 @@ class EventHistoryWidget(QWidget):
                     if column == 0:
                         item.setData(Qt.ItemDataRole.UserRole, event)
                     self.results.setItem(index, column, item)
-            status = page.recording
-            self.status.setText(
-                f"{len(page.events)} events on this page · committed snapshot · "
-                f"pending {status.pending} · dropped {status.dropped} · failed {status.failed}. "
-                f"Oldest retained: {page.usage.oldest_received_at or 'none'}."
-            )
+            self._render_page_status()
             self.limitations.setPlainText("\n".join(
                 item.replace("follow next_cursor", "use Next page") for item in page.limitations
             ))
@@ -253,8 +249,33 @@ class EventHistoryWidget(QWidget):
             return
         event = item.data(Qt.ItemDataRole.UserRole)
         payload = event.payload_text if event.payload_text is not None else f"base64: {event.payload_base64}"
-        self.payload.setPlainText(
+        details = (
             f"Observation {event.observation_id} · {event.provenance.replace('_', ' ')} · QoS {event.qos} · "
             f"retain {event.retain}\nStorage truncated: {event.is_truncated}; "
-            f"rendering truncated: {event.rendering_truncated}\n\n{payload}"
+            f"rendering truncated: {event.rendering_truncated}\n\n"
+        ) if self._advanced_mode else (
+            "Partial payload (truncated).\n\n" if event.is_truncated or event.rendering_truncated else ""
+        )
+        self.payload.setPlainText(details + payload)
+
+    def set_advanced_mode(self, advanced: bool) -> None:
+        self._advanced_mode = advanced
+        self._form.setRowVisible(self.limit, advanced)
+        for column in (2, 3):
+            self.results.setColumnHidden(column, not advanced)
+        self._render_page_status()
+        self._inspect()
+
+    def _render_page_status(self) -> None:
+        page = self._view_model.event_history_result
+        if page is None or self._view_model.event_history_busy or self._view_model.event_history_error:
+            return
+        status = page.recording
+        detail = (
+            f" · pending {status.pending} · dropped {status.dropped} · failed {status.failed}"
+            if self._advanced_mode else ""
+        )
+        self.status.setText(
+            f"{len(page.events)} saved events on this page{detail}. "
+            f"Oldest retained: {page.usage.oldest_received_at or 'none'}."
         )

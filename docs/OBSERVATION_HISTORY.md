@@ -32,12 +32,13 @@ before broker deletion; a drain timeout aborts deletion.
 Open **History**, select a broker, and choose
 **Record messages**. Its status is shown before Search. This action
 enables or disables recording for future receipts without changing retention limits.
-To adjust limits, open **Stored observations → History settings**, select the broker,
+To adjust limits, enable **View → Advanced mode**, then open
+**Stored observations → History settings**, select the broker,
 edit the controls, and choose **Apply history settings**. The shared history
 limits start at seven days, 100,000 events per broker, no per-topic cap, and
 256 MiB of stored payloads globally. Use **Unlimited** for age or per-topic caps.
-Age and payload limits have unit selectors; batch size and the idle interval are
-under **Advanced pruning settings**. Saved changes show confirmation on the page.
+Age and payload limits have unit selectors; batch size and the idle interval appear
+directly with the other settings. There is no local Advanced toggle. Saved changes show confirmation on the page.
 Large history retention limits may slow startup and history queries.
 
 **Search** starts a fresh query including newly saved events.
@@ -85,7 +86,9 @@ coverage. Settings summaries and eviction generations apply globally where label
 
 ## Desktop pages
 
-**Stored observations → Latest stored values** shows one persisted value per topic.
+**Stored observations → Latest stored values** (Advanced mode) shows one persisted
+value per topic. The main History destination and recording controls are available
+in both presentation modes.
 The workspace **History** tab shows individual receipts using the same bounded query
 as MCP. **Record messages** enables or disables recording for its displayed broker
 without changing retention. Search starts over; Next page continues the committed snapshot.

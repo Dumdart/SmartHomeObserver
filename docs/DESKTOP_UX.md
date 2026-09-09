@@ -3,6 +3,44 @@
 The workspace separates MQTT subscriptions, snapshot values, saved receipts, and
 health failures. These views describe different scopes; their counts need not match.
 
+## Simplified and Advanced mode
+
+The desktop starts in simplified mode when no preference exists. **View → Advanced
+mode** is the single application-wide setting; a small status-bar label identifies
+Advanced mode. The choice is saved immediately through GUI QSettings
+(`workspace/advancedMode`) and restored on restart. Older local disclosure settings
+are ignored. There are no local Advanced toggles.
+
+| Workflow | Simplified mode | Advanced mode | Why |
+| --- | --- | --- | --- |
+| Brokers | Selection, connection status/actions, profile management, all connection fields | Same | Host, port, credentials and TLS can be essential for setup and recovery. |
+| Topics | Browse/search, filter and QoS, readable payload, publishing | Adds retained-message options, raw bytes and detailed metadata | Everyday inspection needs fewer fields; custom retained-message settings are summarized. |
+| History | Recording status/control, broker/topic/time filters, pagination, payload and truncation warnings | Adds page size, byte columns, receipt provenance and counters | Recording and message browsing remain core tasks. |
+| Health | Overview, actionable checks, expectation conditions and failure history | Adds Changes, failure occurrence counts and history deletion | Understand and resolve failures without diagnostic administration. |
+| Expectations | Name, condition, required values/encoding, enabled state, save/delete | Adds action settings, description and revision details | All condition types remain usable, including existing binary rules. Nondefault action settings are summarized and preserved on save. |
+| Snapshot | Compact notice of configured bounds and essential empty-state recovery actions | Full Snapshot destination, filters, rendering bounds and diagnostics | Existing view limits stay active and visible as a summary. |
+| Storage and profiles | Specialist destinations hidden | Stored observations, cache administration, retention/pruning and Diagnostic profiles | Keep administration out of everyday navigation. |
+| Help | Broker recovery, MCP setup, support export and About | Also includes log console | Setup and support stay available in both modes. |
+
+Advanced mode is a presentation preference, **not an authorization or security
+boundary**. Switching never connects or disconnects, publishes, changes recording,
+expectations or retention, or deletes data. Existing configurations remain active.
+History recording is changed only through the explicit **Record messages** action.
+
+The setting updates existing panes and subsequent navigation. Snapshot falls back
+to Health; Health → Changes falls back to Overview. Broker/topic context, history
+filters/results and unsent publish text remain intact. Specialist menu actions,
+shortcuts and the log dock's context-menu action are unavailable in simplified mode.
+
+Turning Advanced mode off is refused while Snapshot, subscription or expectation
+forms contain unfinished edits. The notice names the forms; finish saving/applying
+or manually restore their original values, then switch again. No automatic save or
+discard occurs. Stored observations and Diagnostic profiles must be explicitly
+closed before switching, even when clean; finish any edits there first. Broker
+forms remain available with their current values. Turning Advanced mode on reveals
+fields without reloading drafts. Normal refreshes of unchanged editor context also
+preserve unfinished fields.
+
 ## Observe and navigate
 
 - **Add subscription** changes which MQTT topics TopicGate listens for.
@@ -58,8 +96,8 @@ cannot recover gaps. Query results do not repeat a potentially stale recording s
 **History settings** provides recording and retention controls. Age and payload size
 use the same unit choices as latest-state retention. Optional age and per-topic count
 limits use **Unlimited**; mandatory broker-count and global payload limits remain
-bounded. Only pruning batch size and idle interval are under **Advanced pruning
-settings**. Apply confirms success on the page.
+bounded. Retention settings are available in Advanced mode; pruning batch size and idle
+interval appear directly with the other limits. Apply confirms success on the page.
 
 **Search** starts a fresh message query; **Next page** continues its
 fixed boundary. Latest-state sorting and limits remain independent. Red cache
@@ -71,7 +109,7 @@ previews and confirmations remain in effect.
 
 The duplicate broker Snapshot button and History Refresh action were removed. Topic
 Expectations shares the payload/publish control row instead of occupying a separate
-full-width row. No new Advanced toggles or global mode were added.
+full-width row. The global mode described above now controls specialist presentation.
 
 ## Earlier implementation evidence
 
@@ -135,7 +173,7 @@ The full-suite warnings concern SQLite's deprecated default datetime adapter in
 migration tests. The skipped test is in `tests/test_health_wait_wire.py`.
 
 
-## Current pass: manual validation
+## Earlier navigation pass: manual validation
 
 Automated tests verify state, signals, scoping, and layout constraints; they do not
 establish visual usability. Validate the current interface at 1024×640 and a larger
@@ -158,7 +196,7 @@ All ten supplied `docs/images/ux-review` artifacts were verified unchanged by
 SHA-256. This pass did not create screenshots or operate real brokers.
 
 
-## Current pass: automated checks
+## Earlier navigation pass: automated checks
 
 ```powershell
 uv run pytest tests/test_gui.py tests/test_event_history_gui.py tests/test_desktop_snapshot_states.py tests/test_main_view_model.py -q
@@ -192,3 +230,54 @@ git diff --check
 
 Manual check: restart with a saved topic, confirm Health is selected, then open
 Selected and confirm that topic is still available.
+
+
+## Advanced mode: manual validation
+
+Visual and interaction validation is assigned to the user. Existing screenshot and
+validation artifacts are preserved; no replacement screenshots were generated.
+Check at 1024×640 and a larger size, including keyboard navigation:
+
+- Start without a saved mode: confirm Health, Selected and History are the main
+  destinations, while Snapshot, Stored observations, Diagnostic profiles, Changes
+  and log-console routes are absent. Check Ctrl+Shift+S and dock context menus.
+- Use broker selection, profile editing, TLS/credentials, connect/disconnect, topic
+  search, subscriptions, payload inspection, publishing and basic expectations in
+  an isolated test profile. Required fields and recovery actions should be reachable.
+- Open History directly: verify broker scope, recording status, Record messages,
+  Retry after errors, topic/time filters, payload, truncation notices and Next page.
+- Enable Advanced mode: confirm all former capabilities and detailed fields return,
+  with one restrained indicator and no local Advanced switches. Reopen specialist
+  dialogs and verify retention/pruning, diagnostic profiles and cache controls.
+- Switch off from Snapshot and Health → Changes: confirm Health/Overview fallback
+  and unchanged topic/broker context. Keep a selected history result and unsent
+  publish draft across switches; verify the same result and text afterward.
+- Edit Snapshot, subscription, and broker/topic expectations; attempt to switch
+  off. Confirm the mode remains Advanced, the notice names the form, and every
+  draft value remains intact. Resolve edits and retry. Repeat with an open storage
+  or profile editor; it must remain open until explicitly closed.
+- Use existing custom retained-message options, snapshot bounds, binary expectation
+  values and nondefault expectation actions. Confirm concise summaries in simplified
+  mode, required encoding fields, and preservation after an explicit basic save.
+- Restart in each mode and confirm persistence. Check that switching alone changes
+  no connection, recording, configured checks, retention or stored data.
+
+
+## Advanced mode: automated checks
+
+```powershell
+uv run pytest tests/test_gui.py tests/test_event_history_gui.py tests/test_desktop_snapshot_states.py tests/test_main_view_model.py -q --tb=short
+# 153 passed in 56.77 seconds
+uv run pytest
+# 710 passed, 1 skipped, 2 warnings in 112.02 seconds
+git diff --check
+# Passed (Git reports LF-to-CRLF conversion for observer_tree.py)
+```
+
+The skip is `tests/test_health_wait_wire.py`. Both warnings are SQLite datetime
+adapter deprecations in migration tests. Tests use isolated GUI settings and fake
+services; mode coverage includes persistence, visibility after refresh/navigation,
+blocked specialist routes, fallback, dirty forms, hidden configuration preservation,
+history selection and payload preservation, and absence of operational calls.
+All ten supplied UX images were compared byte-for-byte with the Git index and
+remain unchanged. Existing validation records above describe earlier passes.

@@ -383,7 +383,7 @@ def test_observer_filter_explains_subscription_rows_and_hidden_values(tmp_path) 
     window = MainWindow(vm, QSettings(str(tmp_path / "gui.ini"), QSettings.Format.IniFormat))
     vm.apply_snapshot_query(SnapshotQuery(topic_filter="elsewhere/#"))
     pane = window._observer_tree
-    assert "0 snapshot values" in pane._scope.text()
+    assert "0 values" in pane._scope.text()
     assert "Subscription rows remain visible" in pane._empty_state_text.text()
     assert "excluded from snapshot values and counts" in vm.topic_detail.snapshot_scope_note
     assert any(item.text().startswith("Subscription:") for item in pane._items.values())
@@ -445,10 +445,9 @@ def test_snapshot_panel_applies_clears_and_renders_health() -> None:
     assert pane.header_layout.indexOf(pane.heading) == 0
     assert pane.findChild(QToolButton, "snapshotToggleButton") is None
     assert pane.findChild(QWidget, "snapshotContent") is None
-    assert not pane.is_advanced_visible
-    assert not advanced.isChecked()
+    assert advanced is None
     assert not controls.isHidden()
-    assert advanced_content.isHidden()
+    assert not advanced_content.isHidden()
     assert pane.findChild(QLabel, "snapshotSummaryConnection").text() == (
         "Disconnected"
     )
@@ -457,8 +456,6 @@ def test_snapshot_panel_applies_clears_and_renders_health() -> None:
         "reconnectObserveButton",
     ).accessibleName() == "Reconnect & observe"
     assert pane.heading.text() == "Broker snapshot"
-    assert advanced.text() == "Advanced"
-    assert pane.header_layout.indexOf(advanced) >= 0
     assert pane.findChild(
         QPushButton,
         "reconnectObserveButton",
@@ -467,11 +464,7 @@ def test_snapshot_panel_applies_clears_and_renders_health() -> None:
         pane.findChild(QLabel, "snapshotSummaryConnection")
     )
 
-    advanced.setFocus()
-    QTest.keyClick(advanced, Qt.Key.Key_Space)
-    assert pane.is_advanced_visible
     assert not advanced_content.isHidden()
-    assert advanced.text() == "Hide advanced"
     pane.findChild(QLineEdit, "snapshotTopicFilter").setText("home/#")
     pane.findChild(QLineEdit, "snapshotMaximumAge").setText("10.5")
     pane.findChild(QSpinBox, "snapshotResultLimit").setValue(12)
@@ -517,9 +510,8 @@ def test_snapshot_panel_applies_clears_and_renders_health() -> None:
         "Limited"
     )
 
-    pane.set_advanced_visible(False)
     assert pane.query == SnapshotQuery("home/#", 10.5, 12, 512)
-    assert advanced_content.isHidden()
+    assert not advanced_content.isHidden()
     assert not controls.isHidden()
 
     pane.findChild(QPushButton, "clearSnapshotFiltersButton").click()
@@ -1047,12 +1039,12 @@ def test_desktop_persists_snapshot_preferences_and_focuses_search() -> None:
     settings.clear()
     first = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())), settings)
     first._apply_snapshot_query(SnapshotQuery("devices/#", 12.0, 9, 256))
-    first._snapshot_panel.set_advanced_visible(True)
+    first._advanced_mode_action.setChecked(True)
     first.close()
 
     second = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())), settings)
     assert second._view_model.snapshot_query == SnapshotQuery("devices/#", 12.0, 9, 256)
-    assert second._snapshot_panel.is_advanced_visible
+    assert second._advanced_mode_action.isChecked()
     second.show()
     application.processEvents()
     second._focus_topic_search_action.trigger()
@@ -1593,6 +1585,7 @@ def test_snapshot_panel_exposes_active_bounds_and_omitted_count() -> None:
     view_model = MainViewModel(runtime_for(repository))
     window = MainWindow(view_model)
 
+    window._advanced_mode_action.setChecked(True)
     window._show_snapshot()
     window._apply_snapshot_query(SnapshotQuery("home/#", None, 1, 256))
     window._snapshot_panel.render_health(
@@ -1613,6 +1606,7 @@ def test_inspector_navigation_preserves_snapshot_and_tree_editing_state() -> Non
     application = QApplication.instance() or QApplication([])
     repository = FakeGuiRepository()
     window = MainWindow(MainViewModel(runtime_for(repository)))
+    window._advanced_mode_action.setChecked(True)
     stack = window.findChild(QStackedWidget, "inspectorStack")
     filter_edit = window.findChild(QLineEdit, "snapshotTopicFilter")
     search_edit = window._observer_tree._search_edit
@@ -1663,6 +1657,7 @@ def test_background_updates_preserve_the_explicit_inspector_view() -> None:
     repository = FakeGuiRepository()
     view_model = MainViewModel(runtime_for(repository), repository.state.topic)
     window = MainWindow(view_model)
+    window._advanced_mode_action.setChecked(True)
     window._show_topic_details()
     stack = window.findChild(QStackedWidget, "inspectorStack")
 
@@ -1692,6 +1687,7 @@ async def test_reconnect_preserves_the_current_inspector_view() -> None:
     view_model = MainViewModel(runtime_for(repository), repository.state.topic)
     view_model._snapshot_service._sleep = AsyncMock()
     window = MainWindow(view_model)
+    window._advanced_mode_action.setChecked(True)
     window._show_topic_details()
     stack = window.findChild(QStackedWidget, "inspectorStack")
 
@@ -2095,6 +2091,7 @@ def test_main_window_builds_three_pane_workspace_and_collapsible_log() -> None:
     settings.clear()
 
     window = MainWindow(view_model, settings)
+    window._advanced_mode_action.setChecked(True)
 
     splitter = window.findChild(QSplitter, "workspaceSplitter")
     log_dock = window.findChild(QDockWidget, "logConsoleDock")
@@ -2301,15 +2298,14 @@ def test_topic_metadata_hides_advanced_fields_until_requested() -> None:
     messages = pane.findChild(QLabel, "messageCountLabel")
     raw = pane.findChild(QPlainTextEdit, "rawPayload")
 
-    assert advanced.text() == "Advanced"
+    assert advanced is None
     assert source.isHidden()
     assert raw.isHidden()
     assert not state.isHidden()
     assert not messages.isHidden()
 
-    advanced.click()
+    pane.set_advanced_mode(True)
 
-    assert advanced.text() == "Hide advanced"
     assert not source.isHidden()
     assert not raw.isHidden()
 
@@ -2367,7 +2363,7 @@ def test_topic_details_switches_between_payload_and_embedded_publish() -> None:
     assert pane.heading.toolTip() == repository.state.topic
     assert publish_hint.isHidden()
 
-    advanced.click()
+    pane.set_advanced_mode(True)
     assert not raw.isHidden()
     publish_payload.setPlainText("outgoing draft")
     modes.setCurrentIndex(1)
@@ -2383,7 +2379,7 @@ def test_topic_details_switches_between_payload_and_embedded_publish() -> None:
 
     assert not decoded.isHidden()
     assert not raw.isHidden()
-    assert advanced.isChecked()
+    assert not raw.isHidden()
     assert pane.heading.toolTip() == repository.state.topic
     assert publish_payload.toPlainText() == "outgoing draft"
     pane.close()
@@ -3128,7 +3124,7 @@ async def test_broker_selector_confirms_before_shutting_down_and_switching() -> 
 
         assert repository.broker_configurations == [local_profile.config]
         assert broker_repository.get_profile().id == local_profile.id
-        assert stack.currentIndex() == 0
+        assert stack.currentWidget() is window._health_inspector
         assert "Do you want to switch" in question.call_args.args[2]
         assert "shutting down the current MQTT connection" in question.call_args.args[2]
         window.close()
@@ -3263,3 +3259,254 @@ async def test_failed_broker_update_keeps_saved_offline_profile_editable() -> No
         application.processEvents()
 
     await scenario()
+
+
+@pytest.mark.parametrize("saved_mode", [None, False, True])
+def test_global_advanced_mode_defaults_and_persists(tmp_path, saved_mode) -> None:
+    application = QApplication.instance() or QApplication([])
+    settings = QSettings(str(tmp_path / "mode.ini"), QSettings.Format.IniFormat)
+    settings.setValue("workspace/snapshotExpanded", True)
+    if saved_mode is not None:
+        settings.setValue("workspace/advancedMode", saved_mode)
+    window = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())), settings)
+    assert window._advanced_mode_action.isCheckable()
+    assert window._advanced_mode_action in window._view_menu.actions()
+    assert window._advanced_mode_action.isChecked() is bool(saved_mode)
+    window._advanced_mode_action.trigger()
+    expected = not bool(saved_mode)
+    assert settings.value("workspace/advancedMode", type=bool) is expected
+    window.close()
+    restored = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())), settings)
+    assert restored._advanced_mode_action.isChecked() is expected
+    assert restored._destination_tabs.isTabVisible(2) is expected
+    restored.close()
+    application.processEvents()
+
+
+def test_global_mode_visibility_fallback_and_stale_routes() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    vm = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(vm, diagnostic_profile_editor=MagicMock())
+    window.show()
+    application.processEvents()
+    broker_id = vm.active_broker_profile.id
+    topic = vm.topic
+    for advanced in (False, True, False):
+        window._advanced_mode_action.setChecked(advanced)
+        assert window._advanced_mode is advanced
+        assert window._destination_tabs.isTabVisible(2) is advanced
+        assert window._destination_tabs.isTabEnabled(2) is advanced
+        for action in (window._stored_observations_action, window._console_action,
+                       window._diagnostic_profiles_action):
+            assert action.isVisible() is advanced
+            assert action.isEnabled() is advanced
+        assert window._advanced_indicator.isVisible() is advanced
+        assert window._health_inspector._tabs.isTabVisible(3) is advanced
+        assert window._health_inspector._delete_history_button.isHidden() is not advanced
+        assert window._event_history.limit.isHidden() is not advanced
+        assert window._event_history.results.isColumnHidden(2) is not advanced
+        assert window._event_history.results.isColumnHidden(3) is not advanced
+        assert window._event_history.results.isColumnHidden(4) is False
+        assert window._subscription_settings._retain_handling.isHidden() is not advanced
+        assert window._topic_expectations._log_action.isHidden() is not advanced
+        assert window._health_inspector._broker_expectations._revision.isHidden() is not advanced
+        window._show_topic_details()
+        vm.state_changed.emit()
+        assert window._topic_details._raw_payload.isHidden() is not advanced
+        assert window._topic_details._metadata.source.isHidden() is not advanced
+        assert not window._topic_details._decoded_payload.isHidden()
+        assert not window._event_history.enable_recording.isHidden()
+        if advanced:
+            window._show_snapshot()
+            window._health_inspector._tabs.setCurrentIndex(3)
+            window._console_action.trigger()
+        else:
+            assert window._health_inspector._tabs.currentIndex() != 3
+            window._show_stored_observations()
+            window._stored_observations_action.trigger()
+            window._show_diagnostic_profiles()
+            window._diagnostic_profiles_action.trigger()
+            window._console_action.trigger()
+            window._navigate(2)
+            assert window._inspector_stack.currentWidget() is window._health_inspector
+            assert window._stored_observations_dialog is None
+            assert window._diagnostic_profile_editor_window is None
+            assert not window._log_dock.isVisible()
+            assert not window._log_dock.toggleViewAction().isEnabled()
+            assert not window._log_dock.toggleViewAction().isVisible()
+            window._health_inspector._tabs.setCurrentIndex(3)
+            assert window._health_inspector._tabs.currentIndex() == 0
+        assert vm.topic == topic
+        assert vm.active_broker_profile.id == broker_id
+    assert window.findChild(QToolButton, "snapshotAdvancedButton") is None
+    assert window.findChild(QToolButton, "topicMetadataAdvancedButton") is None
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize("editor_name", ["snapshot", "subscription", "topic", "broker"])
+def test_mode_switch_refuses_to_hide_dirty_forms(editor_name) -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    vm = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(vm)
+    window._advanced_mode_action.setChecked(True)
+    if editor_name == "snapshot":
+        pane = window._snapshot_panel
+        field = pane._topic_filter
+        window._show_snapshot()
+    elif editor_name == "subscription":
+        pane = window._subscription_settings
+        field = pane._filter_edit
+        window._show_topic_details()
+    else:
+        pane = window._topic_expectations if editor_name == "topic" else window._health_inspector._broker_expectations
+        pane.start_new()
+        field = pane._name
+    before = field.text()
+    field.setText("unfinished draft")
+    assert pane.has_unsaved_edits
+    destination = window._inspector_stack.currentWidget()
+    with patch.object(QMessageBox, "information") as message:
+        window._advanced_mode_action.setChecked(False)
+    message.assert_called_once()
+    assert "No edits were changed" in message.call_args.args[2]
+    assert window._advanced_mode_action.isChecked()
+    assert window._advanced_mode
+    assert window._inspector_stack.currentWidget() is destination
+    assert field.text() == "unfinished draft"
+    if editor_name == "snapshot":
+        window._render_tree()
+    else:
+        pane.render(vm.topic, vm.selected_subscription) if editor_name == "subscription" else pane.render()
+    assert field.text() == "unfinished draft"
+    field.setText(before)
+    assert not pane.has_unsaved_edits
+    window._advanced_mode_action.setChecked(False)
+    assert not window._advanced_mode
+    window.close()
+    application.processEvents()
+
+
+def test_mode_switch_preserves_basic_drafts_and_existing_configuration() -> None:
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    repository.subscriptions = (Subscription(repository.state.topic, qos=2, retain_as_published=True, retain_handling=2),)
+    vm = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(vm)
+    vm.apply_snapshot_query(SnapshotQuery("home/#", 12, 9, 256))
+    query = vm.snapshot_query
+    subscription = vm.selected_subscription
+    window._show_topic_details()
+    draft = window.findChild(QPlainTextEdit, "publishPayload")
+    draft.setPlainText("unsent message")
+    window._event_history.topic_filter.setText("home/+/temperature")
+    window._event_history.limit.setValue(17)
+    window._topic_expectations.start_new()
+    window._topic_expectations._name.setText("Unfinished expectation")
+    dialog = BrokerSettingsDialog(vm, window)
+    dialog._name_edit.setText("Unfinished profile")
+    dialog.show()
+    # Entering Advanced mode exposes controls without replacing drafts.
+    window._advanced_mode_action.setChecked(True)
+    assert window._topic_expectations._name.text() == "Unfinished expectation"
+    window._topic_expectations._name.clear()
+    with patch.object(window, "_run_async") as operations, patch.object(vm, "save_expectation") as save:
+        window._advanced_mode_action.setChecked(False)
+        operations.assert_not_called()
+        save.assert_not_called()
+    assert not window._advanced_mode
+    assert draft.toPlainText() == "unsent message"
+    assert dialog._name_edit.text() == "Unfinished profile"
+    assert not dialog._host_edit.isHidden()
+    assert not dialog._use_tls_checkbox.isHidden()
+    assert window._event_history.topic_filter.text() == "home/+/temperature"
+    assert window._event_history.limit.value() == 17
+    assert vm.snapshot_query == query
+    assert vm.selected_subscription == subscription
+    assert window._subscription_settings._retain_handling.currentIndex() == 2
+    assert window._subscription_settings._retain_as_published.isChecked()
+    assert "Do not send retained messages" in window._subscription_settings._options_summary.text()
+    assert "payload preview 256 bytes" in window._observer_tree._scope.text()
+    assert "age up to 12" in window._observer_tree._scope.text()
+    dialog.close()
+    window.close()
+    application.processEvents()
+
+
+def test_open_specialist_windows_require_explicit_resolution_before_switching() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(MainViewModel(runtime_for(FakeGuiRepository())))
+    window._advanced_mode_action.setChecked(True)
+    # A nonmodal specialist window can contain edits not yet applied to its model.
+    dialog = StoredObservationsDialog(window._view_model, window)
+    window._stored_observations_dialog = dialog
+    dialog.show()
+    with patch.object(QMessageBox, "information") as message:
+        window._advanced_mode_action.setChecked(False)
+    assert window._advanced_mode_action.isChecked()
+    assert dialog.isVisible()
+    assert "Close Stored observations" in message.call_args.args[2]
+    dialog.close()
+    window._advanced_mode_action.setChecked(False)
+    assert not window._advanced_mode_action.isChecked()
+    window.close()
+    application.processEvents()
+
+
+def test_global_mode_switch_has_no_operational_side_effects() -> None:
+    from contextlib import ExitStack
+
+    application = QApplication.instance() or QApplication([])
+    vm = MainViewModel(runtime_for(FakeGuiRepository()))
+    window = MainWindow(vm)
+    methods = (
+        "connect_to_broker", "disconnect_from_broker", "reconnect_and_observe",
+        "publish_message", "set_history_recording", "save_history_settings",
+        "save_expectation", "delete_expectation", "update_subscription",
+        "apply_snapshot_query", "reset_snapshot_query",
+        "confirm_retention_policy", "confirm_cache_deletion", "delete_health_history",
+    )
+    with ExitStack() as stack:
+        operations = [stack.enter_context(patch.object(vm, name)) for name in methods]
+        schedule = stack.enter_context(patch.object(window, "_run_async"))
+        for mode in (True, False, True, False):
+            window._advanced_mode_action.setChecked(mode)
+        for operation in (*operations, schedule):
+            operation.assert_not_called()
+    window.close()
+    application.processEvents()
+
+
+def test_simplified_expectation_save_preserves_hidden_configuration() -> None:
+    from topicgate.core.models.health import TopicTarget
+
+    application = QApplication.instance() or QApplication([])
+    repository = FakeGuiRepository()
+    vm = MainViewModel(runtime_for(repository), repository.state.topic)
+    window = MainWindow(vm)
+    rule = HealthExpectation(
+        uuid4(), 3, True, HealthSeverity.WARNING,
+        TopicTarget(vm.active_broker_profile.id, repository.state.topic),
+        EqualCondition(b"21.5"), frozenset(), "Temperature",
+        description="Existing description",
+    )
+    editor = window._topic_expectations
+    editor._load(rule)
+    assert editor._log_action.isHidden()
+    assert not editor._log_action.isChecked()
+    assert not editor._store_action.isChecked()
+    assert "no actions" in editor._options_summary.text()
+    assert not editor._options_summary.isHidden()
+    editor._name.setText("Renamed temperature")
+    with patch.object(vm, "save_expectation") as save:
+        editor._save()
+    values = save.call_args.kwargs
+    assert values["description"] == rule.description
+    assert values["log_action"] is False
+    assert values["store_failure"] is False
+    assert values["expectation_id"] == rule.expectation_id
+    assert values["name"] == "Renamed temperature"
+    window.close()
+    application.processEvents()

@@ -36,6 +36,7 @@ class HealthInspector(WorkspacePane):
         super().__init__("Health", minimum_hint_width=320)
         self.setObjectName("healthInspector")
         self._view_model = view_model
+        self._advanced_mode = True
         self._selected_topic = ""
         self._selected_expectation = None
 
@@ -57,6 +58,18 @@ class HealthInspector(WorkspacePane):
         self._view_model.health_changed.connect(self.render)
         self._view_model.configuration_changed.connect(self.render)
         self.render()
+
+    def set_advanced_mode(self, advanced: bool) -> None:
+        self._advanced_mode = advanced
+        self._tabs.blockSignals(True)
+        if not advanced and self._tabs.currentIndex() == 3:
+            self._tabs.setCurrentIndex(0)
+        self._tabs.setTabVisible(3, advanced)
+        self._tabs.setTabEnabled(3, advanced)
+        self._tabs.blockSignals(False)
+        self._delete_history_button.setVisible(advanced)
+        self._history_table.setColumnHidden(4, not advanced)
+        self._broker_expectations.set_advanced_mode(advanced)
 
     def _expectations_page(self) -> QWidget:
         page = QWidget()
@@ -555,6 +568,9 @@ class HealthInspector(WorkspacePane):
             self._history_message.setText(f"Unable to load failure history: {error}")
 
     def _tab_changed(self, index: int) -> None:
+        if index == 3 and not self._advanced_mode:
+            self._tabs.setCurrentIndex(0)
+            return
         if index == 2:
             self.query_history()
 

@@ -41,7 +41,7 @@ class SubscriptionSettingsPane(QWidget):
         )
         self.content_layout.addWidget(self._hint)
 
-        form = QFormLayout()
+        form = self._form = QFormLayout()
         self._filter_edit = QLineEdit()
         self._qos_combo = self._compact_combo(
             [
@@ -62,6 +62,11 @@ class SubscriptionSettingsPane(QWidget):
         form.addRow("QoS", self._qos_combo)
         form.addRow("Retain", self._retain_as_published)
         form.addRow("Handling", self._retain_handling)
+        self._options_summary = QLabel()
+        self._options_summary.setWordWrap(True)
+        self._options_summary.setObjectName("subscriptionOptionsSummary")
+        self._advanced_mode = True
+        form.addRow(self._options_summary)
         self.content_layout.addLayout(form)
 
         buttons = QHBoxLayout()
@@ -84,6 +89,8 @@ class SubscriptionSettingsPane(QWidget):
         selected_topic: str,
         subscription: Subscription | None,
     ) -> None:
+        if subscription == self._subscription and self.has_unsaved_edits:
+            return
         self._selected_topic = selected_topic
         self._feedback.clear()
         self._subscription = subscription
@@ -95,6 +102,7 @@ class SubscriptionSettingsPane(QWidget):
             self._qos_combo.setCurrentIndex(0)
             self._retain_as_published.setChecked(False)
             self._retain_handling.setCurrentIndex(0)
+            self.set_advanced_mode(self._advanced_mode)
             return
 
         if subscription.topic_filter == selected_topic:
@@ -107,6 +115,30 @@ class SubscriptionSettingsPane(QWidget):
         self._qos_combo.setCurrentIndex(subscription.qos)
         self._retain_as_published.setChecked(subscription.retain_as_published)
         self._retain_handling.setCurrentIndex(subscription.retain_handling)
+        self.set_advanced_mode(self._advanced_mode)
+
+    @property
+    def has_unsaved_edits(self) -> bool:
+        subscription = self._subscription
+        return subscription is not None and (
+            self._filter_edit.text() != subscription.topic_filter
+            or self._qos_combo.currentIndex() != subscription.qos
+            or self._retain_as_published.isChecked() != subscription.retain_as_published
+            or self._retain_handling.currentIndex() != subscription.retain_handling
+        )
+
+    def set_advanced_mode(self, advanced: bool) -> None:
+        self._advanced_mode = advanced
+        for widget in (self._retain_as_published, self._retain_handling):
+            self._form.setRowVisible(widget, advanced)
+        self._options_summary.setText(
+            "Retained messages: " + self._retain_handling.currentText().split(" - ", 1)[-1]
+            + ("; preserve retained flag." if self._retain_as_published.isChecked() else ".")
+        )
+        self._options_summary.setVisible(
+            not advanced and self._subscription is not None
+            and (self._retain_as_published.isChecked() or self._retain_handling.currentIndex() != 0)
+        )
 
     def _apply(self) -> None:
         if self._subscription is None:

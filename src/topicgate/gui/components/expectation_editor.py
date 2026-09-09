@@ -49,6 +49,9 @@ class ExpectationEditor(QWidget):
         if target_kind not in {"broker", "topic"}:
             raise ValueError("target_kind must be 'broker' or 'topic'")
         self._view_model = view_model
+        self._draft_baseline = None
+        self._draft_context = None
+        self._advanced_mode = True
         self._target_kind = target_kind
         self._selected_id: UUID | None = None
         self._editing = target_kind == "topic"
@@ -184,6 +187,10 @@ class ExpectationEditor(QWidget):
         self._revision = QLabel()
         self._revision.setObjectName("expectationRevision")
         form.addRow("Details", self._revision)
+        self._options_summary = QLabel()
+        self._options_summary.setObjectName("expectationOptionsSummary")
+        self._options_summary.setWordWrap(True)
+        form.addRow(self._options_summary)
         layout.addWidget(self._form_container)
         self._form_container.setVisible(self._editing)
 
@@ -213,7 +220,46 @@ class ExpectationEditor(QWidget):
         self._view_model.health_changed.connect(self.render)
         self.render()
 
+    def _form_state(self) -> tuple:
+        return (
+            self._name.text(), self._description.text(),
+            self._enabled.isChecked(), self._log_action.isChecked(),
+            self._store_action.isChecked(), self._condition_kind.currentIndex(),
+            self._expected.currentText(), self._expected_values.toPlainText(),
+            self._encoding.currentIndex(),
+        )
+
+    @property
+    def has_unsaved_edits(self) -> bool:
+        return self._draft_baseline is not None and self._form_state() != self._draft_baseline
+
+    def _remember_draft(self) -> None:
+        self._draft_baseline = self._form_state()
+        self._draft_context = (
+            self._view_model.active_broker_profile.id,
+            self._view_model.topic if self._target_kind == "topic" else "",
+        )
+        self.set_advanced_mode(self._advanced_mode)
+
+    def set_advanced_mode(self, advanced: bool) -> None:
+        self._advanced_mode = advanced
+        for widget in (self._log_action, self._store_action, self._revision, self._description):
+            self._form.setRowVisible(widget, advanced)
+        actions = []
+        if self._log_action.isChecked():
+            actions.append("log transitions")
+        if self._store_action.isChecked():
+            actions.append("save failure history")
+        self._options_summary.setText("On changes: " + (", ".join(actions) or "no actions") + ".")
+        self._options_summary.setVisible(not advanced and len(actions) != 2)
+
     def render(self) -> None:
+        context = (
+            self._view_model.active_broker_profile.id,
+            self._view_model.topic if self._target_kind == "topic" else "",
+        )
+        if self.has_unsaved_edits and self._draft_context == context:
+            return
         if self._target_kind == "topic":
             topic = self._view_model.topic
             available = bool(topic) and "+" not in topic and "#" not in topic
@@ -272,6 +318,7 @@ class ExpectationEditor(QWidget):
         self._delete_button.setEnabled(False)
         if self._target_kind == "broker":
             self._form_container.setVisible(self._editing)
+        self._remember_draft()
 
     def _new(self) -> None:
         self._editing = True
@@ -292,6 +339,7 @@ class ExpectationEditor(QWidget):
             self._expected.setCurrentText(ConnectionStatus.CONNECTED.value)
         self._delete_button.setEnabled(False)
         self._name.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._remember_draft()
 
     def start_new(self) -> None:
         self._new()
@@ -319,6 +367,7 @@ class ExpectationEditor(QWidget):
         self._set_expected_values(values)
         self._revision.setText(f"Revision {expectation.revision}")
         self._delete_button.setEnabled(True)
+        self._remember_draft()
 
     def select_expectation(self, expectation_id: object) -> None:
         """Select an expectation from another health presentation."""
@@ -353,6 +402,7 @@ class ExpectationEditor(QWidget):
             QMessageBox.warning(self, "Invalid expectation", str(error))
             return
         self._selected_id = None
+        self._draft_baseline = None
         self._editing = self._target_kind == "topic"
         self.render()
 

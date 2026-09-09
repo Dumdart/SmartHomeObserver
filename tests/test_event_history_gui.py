@@ -2,7 +2,7 @@ import asyncio
 from threading import Event
 from unittest.mock import Mock
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from topicgate.app.services.history_retention_service import HistoryRetentionService
 from topicgate.app.services.topic_history_service import TopicHistoryService
@@ -168,9 +168,8 @@ def test_history_units_unlimited_and_advanced_pruning_round_trip():
     vm.history_policy = HistoryRetentionPolicy()
     widget.render()
     assert widget.draft_policy() == vm.history_policy
-    assert widget.advanced_content.isHidden()
-    widget.advanced.click()
     assert not widget.advanced_content.isHidden()
+    assert widget.findChild(QPushButton, "historyAdvancedPruning") is None
     widget.unlimited["max_age_seconds"].setChecked(True)
     assert widget.draft_policy().max_age_seconds is None
     assert not widget.quantities["max_age_seconds"].isEnabled()
@@ -306,3 +305,30 @@ async def test_late_recording_status_cannot_enable_controls_for_another_broker()
         await task
         widget.close()
         app.processEvents()
+
+
+def test_history_mode_switch_preserves_page_selection_and_payload():
+    app = QApplication.instance() or QApplication([])
+    vm = MainViewModel(runtime_for(FakeGuiRepository()))
+    widget = EventHistoryWidget(vm)
+    page = make_page(widget.broker.currentData())
+    vm.event_history_result = page
+    widget.render()
+    widget.results.selectRow(0)
+    selected = widget.results.currentRow()
+    queries, recordings = [], []
+    widget.query_requested.connect(lambda *args: queries.append(args))
+    widget.recording_requested.connect(lambda *args: recordings.append(args))
+    widget.set_advanced_mode(False)
+    assert vm.event_history_result is page
+    assert widget.results.currentRow() == selected
+    assert "Observation " not in widget.payload.toPlainText()
+    assert "synthetic" in widget.payload.toPlainText()
+    assert "dropped 2" not in widget.status.text()
+    assert not widget.limitations.isHidden()
+    widget.set_advanced_mode(True)
+    assert "Observation " in widget.payload.toPlainText()
+    assert "dropped 2" in widget.status.text()
+    assert queries == recordings == []
+    widget.close()
+    app.processEvents()

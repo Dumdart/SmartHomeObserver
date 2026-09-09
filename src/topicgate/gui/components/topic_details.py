@@ -142,7 +142,6 @@ class TopicDetailsPane(WorkspacePane):
         payload_layout.addWidget(self._filter_summary, 1)
 
         self._metadata = TopicMetadataPane()
-        self._metadata.advanced_changed.connect(self._set_advanced_visible)
         payload_layout.addWidget(self._metadata)
 
         self._snapshot_scope_note = QLabel()
@@ -271,7 +270,8 @@ class TopicDetailsPane(WorkspacePane):
     def focus_payload(self) -> None:
         self._decoded_payload.setFocus(Qt.FocusReason.OtherFocusReason)
 
-    def _set_advanced_visible(self, visible: bool) -> None:
+    def set_advanced_mode(self, visible: bool) -> None:
+        self._metadata.set_advanced_mode(visible)
         self._advanced_visible = visible
         self._update_raw_visibility()
 

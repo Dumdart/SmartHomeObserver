@@ -52,13 +52,8 @@ class HistorySettingsWidget(QWidget):
         layout.addWidget(description)
         limits = QFormLayout()
         advanced_limits = QFormLayout()
-        self.advanced = QPushButton("Advanced pruning settings")
-        self.advanced.setCheckable(True)
-        self.advanced.setObjectName("historyAdvancedPruning")
         self.advanced_content = QWidget()
         self.advanced_content.setLayout(advanced_limits)
-        self.advanced_content.setVisible(False)
-        self.advanced.toggled.connect(self.advanced_content.setVisible)
         self.fields: dict[str, QLineEdit] = {}
         self.quantities = {}
         self.unlimited = {}
@@ -97,7 +92,6 @@ class HistorySettingsWidget(QWidget):
             target_form = advanced_limits if name.startswith("prune_") else limits
             target_form.addRow(label, field)
         layout.addLayout(limits)
-        layout.addWidget(self.advanced)
         layout.addWidget(self.advanced_content)
         self.error = QLabel()
         self.error.setObjectName("historySettingsError")
