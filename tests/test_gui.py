@@ -2134,10 +2134,13 @@ def test_main_window_builds_three_pane_workspace_and_collapsible_log() -> None:
     status = window.findChild(QLabel, "brokerConnectionStatus")
     assert status.text() == "Connected"
     assert status.accessibleName() == "MQTT connection status"
+    heading_icon = window.findChild(QLabel, "brokerHeadingIcon")
+    assert heading_icon.accessibleName() == "Broker"
+    assert window._broker_connection.header_layout.indexOf(heading_icon) == 0
     assert window._broker_connection.header_layout.indexOf(
         window._broker_connection.heading
-    ) == 0
-    assert window._broker_connection.header_layout.indexOf(status) == 1
+    ) == 1
+    assert window._broker_connection.header_layout.indexOf(status) == 2
     assert window.findChild(QLabel, "activeBrokerEndpoint") is None
     assert window.findChild(QToolButton, "brokerSettingsButton") is None
     assert window.findChild(QWidget, "applicationHeader") is None
