@@ -9,7 +9,7 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yaml
   smoketests:
-    uses: ./.github/workflows/smoketests.yaml
+    uses: ./.github/workflows/smoketests.yml
 
   release:
     runs-on: ubuntu-latest
