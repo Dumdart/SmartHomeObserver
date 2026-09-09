@@ -66,6 +66,13 @@ class SnapshotPanel(WorkspacePane):
         secondary_summary.addWidget(self._summary_labels["dropped"])
         self.content_layout.addLayout(secondary_summary)
 
+        self._scope_summary = QLabel()
+        self._scope_summary.setObjectName("snapshotScopeSummary")
+        self._scope_summary.setTextFormat(Qt.TextFormat.PlainText)
+        self._scope_summary.setWordWrap(True)
+        self._scope_summary.setStyleSheet("color: #92400e;")
+        self.content_layout.addWidget(self._scope_summary)
+
         controls = QGroupBox("Snapshot filters")
         controls.setObjectName("snapshotControls")
         form = QFormLayout(controls)
@@ -183,6 +190,8 @@ class SnapshotPanel(WorkspacePane):
             clear_button,
             observe_button,
         )
+        self._rendered_query = SnapshotQuery()
+        self._omitted_count = 0
         self.render_query(SnapshotQuery())
         self.render_connection_status("disconnected")
         self._summary_labels["returned"].setText("Returned 0")
@@ -214,12 +223,14 @@ class SnapshotPanel(WorkspacePane):
         self._advanced_button.setChecked(visible)
 
     def render_query(self, query: SnapshotQuery) -> None:
+        self._rendered_query = query
         self._topic_filter.setText(query.topic_filter)
         self._maximum_age.setText(
             "" if query.max_age_seconds is None else str(query.max_age_seconds)
         )
         self._result_limit.setValue(query.result_limit)
         self._payload_limit.setValue(query.payload_limit_bytes)
+        self._render_scope_summary()
 
     def render_connection_status(self, status: str) -> None:
         value = status.replace("_", " ").title()
@@ -235,6 +246,7 @@ class SnapshotPanel(WorkspacePane):
         self._update_summary_accessibility()
 
     def render_health(self, health: BrokerSnapshotHealth) -> None:
+        self._omitted_count = health.omitted_count
         values = {
             "captured": health.captured_at_label,
             "connected": health.connected_at_label,
@@ -266,6 +278,7 @@ class SnapshotPanel(WorkspacePane):
             else "color: #92400e;"
         )
         self._update_summary_accessibility()
+        self._render_scope_summary()
 
     def set_busy(self, busy: bool) -> None:
         for widget in self._action_widgets:
@@ -288,6 +301,24 @@ class SnapshotPanel(WorkspacePane):
             label.text() for label in self._summary_labels.values()
         )
         self._advanced_button.setAccessibleDescription(f"{summary}.")
+
+    def _render_scope_summary(self) -> None:
+        query = self._rendered_query
+        bounds: list[str] = []
+        if query.topic_filter != "#":
+            bounds.append(f"filter {query.topic_filter}")
+        if query.max_age_seconds is not None:
+            bounds.append(f"maximum age {query.max_age_seconds:g}s")
+        if query.result_limit != SnapshotQuery().result_limit:
+            bounds.append(f"result limit {query.result_limit}")
+        if self._omitted_count:
+            bounds.append(f"{self._omitted_count} topic(s) omitted")
+        self._scope_summary.setText(
+            "Active snapshot bounds: " + ", ".join(bounds)
+            if bounds
+            else ""
+        )
+        self._scope_summary.setVisible(bool(bounds))
 
     def _emit_apply(self) -> None:
         self._emit_query(self.apply_requested)

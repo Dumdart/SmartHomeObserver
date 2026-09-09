@@ -84,6 +84,8 @@ class StoredObservationsDialog(QDialog):
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("storedObservationsPages")
+        self.tabs.tabBar().setObjectName("storedObservationsPages")
+        self.tabs.tabBar().setExpanding(True)
         self.tabs.setAccessibleName("Stored observations settings pages")
         self.tabs.addTab(self._history_page(), "Latest stored state")
         self.event_history = EventHistoryWidget(view_model)

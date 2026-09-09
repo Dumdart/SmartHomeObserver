@@ -141,6 +141,14 @@ class TopicDetailsPane(WorkspacePane):
         self._metadata.advanced_changed.connect(self._set_advanced_visible)
         payload_layout.addWidget(self._metadata)
 
+        self._snapshot_scope_note = QLabel()
+        self._snapshot_scope_note.setObjectName("topicSnapshotScopeNotice")
+        self._snapshot_scope_note.setTextFormat(Qt.TextFormat.PlainText)
+        self._snapshot_scope_note.setWordWrap(True)
+        self._snapshot_scope_note.setStyleSheet("color: #92400e;")
+        self._snapshot_scope_note.setHidden(True)
+        payload_layout.addWidget(self._snapshot_scope_note)
+
         self._decoded_label = self._section_label("Decoded payload")
         payload_layout.addWidget(self._decoded_label)
         self._decoded_payload = QPlainTextEdit()
@@ -243,6 +251,8 @@ class TopicDetailsPane(WorkspacePane):
 
         detail = view_model.topic_detail
         self._metadata.render(detail)
+        self._snapshot_scope_note.setText(detail.snapshot_scope_note)
+        self._snapshot_scope_note.setVisible(bool(detail.snapshot_scope_note))
         self._decoded_payload.setPlainText(detail.decoded_payload)
         self._raw_payload.setPlainText(detail.raw_payload)
 

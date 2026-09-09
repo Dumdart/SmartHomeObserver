@@ -599,6 +599,9 @@ class MainWindow(QMainWindow):
         self._schedule_health_refresh()
 
     def _render_tree(self) -> None:
+        self._snapshot_panel.render_query(
+            self._view_model.snapshot_query
+        )
         self._observer_tree.render_tree(
             self._view_model.topic_tree,
             self._view_model.topic,

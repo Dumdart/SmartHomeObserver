@@ -3,6 +3,7 @@ import binascii
 from base64 import b64decode
 from contextlib import asynccontextmanager
 from contextlib import suppress
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator
@@ -71,6 +72,7 @@ from topicgate.presentation.snapshot_presentation import (
     BrokerSnapshotHealth,
     SnapshotQuery,
     snapshot_health,
+    topic_omission_notice,
 )
 from topicgate.presentation.topic_presentation import (
     TopicDetail,
@@ -535,11 +537,33 @@ class MainViewModel(QObject):
             ),
             None,
         )
-        return topic_detail(
+        scope_note = ""
+        if (
+            state is None
+            and self._topic
+            and not mqtt_filter_has_wildcards(self._topic)
+        ):
+            exact_snapshot = self._snapshot_service.build_resolved_current(
+                self.active_broker_profile,
+                topic_filter=self._topic,
+                result_limit=1,
+                payload_limit_bytes=self._snapshot_query.payload_limit_bytes,
+            )
+            state = next(iter(exact_snapshot.topics), None)
+            if state is not None:
+                scope_note = topic_omission_notice(
+                    self._snapshot_query,
+                    self._snapshot,
+                    state,
+                )
+        detail = topic_detail(
             state,
             self._topic,
             self._snapshot.dropped_message_count,
         )
+        if scope_note:
+            return replace(detail, snapshot_scope_note=scope_note)
+        return detail
 
     @property
     def received_at(self) -> str:

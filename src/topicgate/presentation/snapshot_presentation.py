@@ -9,6 +9,7 @@ from topicgate.app.models.broker_snapshot import (
 from topicgate.app.services.broker_snapshot_service import (
     DEFAULT_SNAPSHOT_RESULT_LIMIT,
 )
+from topicgate.core.mqtt_topics import mqtt_filter_matches
 from topicgate.core.payload_limits import MAX_RENDERED_PAYLOAD_BYTES
 
 
@@ -129,3 +130,28 @@ def status_detail(status: str) -> str:
     if status == "cached":
         return "Value was restored from persisted storage."
     return "Value was received during the current runtime."
+
+
+def topic_omission_notice(
+    query: SnapshotQuery,
+    snapshot: BrokerSnapshot,
+    state: SnapshotTopicState,
+) -> str:
+    """Explain why an exact current topic is outside the bounded snapshot."""
+    if any(item.topic == state.topic for item in snapshot.topics):
+        return ""
+    if not mqtt_filter_matches(query.topic_filter, state.topic):
+        reason = f"the active topic filter {query.topic_filter!r} excludes it"
+    elif (
+        query.max_age_seconds is not None
+        and state.age_seconds > query.max_age_seconds
+    ):
+        reason = "it is older than the active maximum age"
+    elif snapshot.results.omitted_by_limit:
+        reason = "it is beyond the active result limit"
+    else:
+        reason = "the active snapshot bounds omit it"
+    return (
+        "Current value available, but omitted from the observer tree because "
+        f"{reason}."
+    )

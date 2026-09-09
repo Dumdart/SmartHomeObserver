@@ -18,6 +18,7 @@ from topicgate.core.models.mqtt_observation import ObservationSource
 from topicgate.presentation.snapshot_presentation import (
     SnapshotQuery,
     snapshot_health,
+    topic_omission_notice,
     topic_state_badges,
 )
 from topicgate.presentation.topic_presentation import topic_detail
@@ -105,6 +106,24 @@ def test_snapshot_query_defaults_match_read_only_snapshot_defaults() -> None:
         max_age_seconds=None,
         result_limit=100,
         payload_limit_bytes=16_384,
+    )
+
+
+def test_topic_omission_notice_distinguishes_filter_and_result_limit() -> None:
+    state = _topic("devices/z/status")
+    snapshot = _snapshot(_topic("devices/a/status"))
+
+    assert topic_omission_notice(
+        SnapshotQuery(topic_filter="other/#"), snapshot, state
+    ) == (
+        "Current value available, but omitted from the observer tree because "
+        "the active topic filter 'other/#' excludes it."
+    )
+    assert topic_omission_notice(
+        SnapshotQuery(result_limit=1), snapshot, state
+    ) == (
+        "Current value available, but omitted from the observer tree because "
+        "it is beyond the active result limit."
     )
 
 
