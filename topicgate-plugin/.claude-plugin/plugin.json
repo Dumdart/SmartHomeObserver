@@ -1,6 +1,6 @@
 {
   "name": "topicgate",
-  "version": "1.5.0",
+  "version": "1.5.2",
   "description": "Inspect local MQTT state and configure health expectations with optional TopicGate control tools",
   "author": {
     "name": "Dumdart",
