@@ -1,13 +1,11 @@
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFormLayout, QLabel, QToolButton, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFormLayout, QLabel, QWidget
 
 from topicgate.presentation.topic_presentation import TopicDetail
 
 
 class TopicMetadataPane(QWidget):
     """Compact metadata renderer for the selected topic detail."""
-
-    advanced_changed = Signal(bool)
 
     def __init__(self) -> None:
         super().__init__()
@@ -62,14 +60,7 @@ class TopicMetadataPane(QWidget):
             self.qos,
             self.dropped,
         )
-        self._advanced_button = QToolButton()
-        self._advanced_button.setObjectName("topicMetadataAdvancedButton")
-        self._advanced_button.setCheckable(True)
-        self._advanced_button.setText("Advanced")
-        self._advanced_button.setAccessibleName("Show advanced topic details")
-        self._advanced_button.toggled.connect(self._set_advanced_visible)
-        self._form.addRow(self._advanced_button)
-        self._set_advanced_visible(False)
+        self.set_advanced_mode(False)
 
     def render(self, detail: TopicDetail) -> None:
         self.received.setText(detail.received_at)
@@ -92,18 +83,9 @@ class TopicMetadataPane(QWidget):
         self.messages.setText(str(detail.message_count))
         self.dropped.setText(str(detail.dropped_message_count))
 
-    def _set_advanced_visible(self, visible: bool) -> None:
+    def set_advanced_mode(self, advanced: bool) -> None:
         for widget in self._advanced_widgets:
-            self._form.setRowVisible(widget, visible)
-        self._advanced_button.setText(
-            "Hide advanced" if visible else "Advanced"
-        )
-        self._advanced_button.setAccessibleName(
-            "Hide advanced topic details"
-            if visible
-            else "Show advanced topic details"
-        )
-        self.advanced_changed.emit(visible)
+            self._form.setRowVisible(widget, advanced)
 
     @staticmethod
     def _label(name: str, text: str = "-") -> QLabel:

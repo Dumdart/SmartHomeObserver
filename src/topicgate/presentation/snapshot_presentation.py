@@ -152,6 +152,6 @@ def topic_omission_notice(
     else:
         reason = "the active snapshot bounds omit it"
     return (
-        "Current value available, but omitted from the observer tree because "
+        "Current value available, but excluded from snapshot values and counts because "
         f"{reason}."
     )

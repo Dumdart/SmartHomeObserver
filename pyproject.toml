@@ -80,6 +80,7 @@ where = ["src"]
 topicgate = [
     "assets/*.png",
     "assets/*.svg",
+    "assets/icons/*.svg",
     "infrastructure/database/alembic.ini",
     "infrastructure/database/alembic/*.py",
     "infrastructure/database/alembic/*.mako",

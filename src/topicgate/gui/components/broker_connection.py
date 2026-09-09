@@ -18,7 +18,7 @@ from topicgate.gui.components.workspace_pane import (
     WORKSPACE_CONTROL_HEIGHT,
     WorkspacePane,
 )
-from topicgate.gui.icons import delete_icon, edit_icon
+from topicgate.gui.icons import IconName, icon
 from topicgate.gui.main_view_model import MainViewModel
 
 
@@ -62,7 +62,7 @@ class _BrokerProfileRow(QWidget):
 
         edit_button = QToolButton()
         edit_button.setObjectName("editBrokerProfileButton")
-        edit_button.setIcon(edit_icon())
+        edit_button.setIcon(icon(IconName.EDIT))
         edit_button.setIconSize(QSize(14, 14))
         edit_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
@@ -75,7 +75,7 @@ class _BrokerProfileRow(QWidget):
 
         delete_button = QToolButton()
         delete_button.setObjectName("deleteBrokerProfileButton")
-        delete_button.setIcon(delete_icon())
+        delete_button.setIcon(icon(IconName.DELETE))
         delete_button.setIconSize(QSize(14, 14))
         delete_button.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
@@ -161,7 +161,7 @@ class BrokerProfileSelector(QComboBox):
             self._popup_menu.addAction(action)
 
         self._popup_menu.addSeparator()
-        add_action = QAction("+ Add Broker", self._popup_menu)
+        add_action = QAction(icon(IconName.CREATE), "Add Broker", self._popup_menu)
         add_action.setObjectName("addBrokerProfilePaneAction")
         add_action.setEnabled(self._management_enabled)
         add_action.triggered.connect(self._request_add)
@@ -199,7 +199,6 @@ class BrokerConnectionPane(WorkspacePane):
     connect_requested = Signal()
     reconnect_requested = Signal()
     disconnect_requested = Signal()
-    inspect_snapshot_requested = Signal()
     health_requested = Signal()
 
     _STATUS_LABELS = {
@@ -211,12 +210,16 @@ class BrokerConnectionPane(WorkspacePane):
 
     def __init__(self) -> None:
         super().__init__("Broker", minimum_hint_width=320)
+        heading_icon = QLabel()
+        heading_icon.setObjectName("brokerHeadingIcon")
+        heading_icon.setAccessibleName("Broker")
+        heading_icon.setPixmap(icon(IconName.BROKER).pixmap(16, 16))
+        self.header_layout.insertWidget(0, heading_icon)
         self.setObjectName("brokerConnectionPane")
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
-        self.setMaximumHeight(112)
         self._status = "disconnected"
 
         self._status_badge = QLabel("Disconnected")
@@ -227,19 +230,37 @@ class BrokerConnectionPane(WorkspacePane):
             QSizePolicy.Policy.Maximum,
             QSizePolicy.Policy.Preferred,
         )
-        self.header_layout.setStretch(0, 0)
+        self.header_layout.setStretch(1, 0)
         self.header_layout.addWidget(self._status_badge)
         self.header_layout.addStretch(1)
+        self._manage_button = QToolButton()
+        self._manage_button.setText("Profiles…")
+        self._manage_button.setIcon(icon(IconName.SETTINGS))
+        self._manage_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._manage_button.setAccessibleName("Manage broker profiles")
+        self._manage_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._manage_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._manage_button.setObjectName("manageBrokersButton")
+        self._manage_button.clicked.connect(lambda: self._profile_selector.showPopup())
 
         broker_grid = QGridLayout()
-        broker_grid.setSpacing(8)
+        broker_grid.setHorizontalSpacing(8)
+        broker_grid.setVerticalSpacing(6)
         broker_grid.setColumnStretch(0, 1)
         broker_grid.setColumnStretch(1, 0)
+        broker_grid.setColumnStretch(2, 0)
         self._profile_selector = BrokerProfileSelector()
         self._profile_selector.setObjectName("connectionBrokerSelector")
         self._profile_selector.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._profile_selector.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self._profile_selector.setAccessibleName("Active broker profile")
-        self._profile_selector.setMinimumWidth(160)
+        self._profile_selector.setMinimumWidth(80)
         self._profile_selector.currentIndexChanged.connect(
             self._select_profile
         )
@@ -253,29 +274,30 @@ class BrokerConnectionPane(WorkspacePane):
             self.add_profile_requested.emit
         )
 
-        self._inspect_snapshot_button = QPushButton("Inspect snapshot")
-        self._inspect_snapshot_button.setObjectName("inspectSnapshotButton")
-        self._inspect_snapshot_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
-        self._inspect_snapshot_button.setAccessibleName("Inspect broker snapshot")
-        self._inspect_snapshot_button.clicked.connect(
-            self.inspect_snapshot_requested.emit
-        )
-
         self._lifecycle_button = QPushButton("Connect")
         self._lifecycle_button.setObjectName("brokerLifecycleButton")
         self._lifecycle_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._lifecycle_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
         self._lifecycle_button.setProperty("primary", True)
         self._lifecycle_button.clicked.connect(self._request_lifecycle_operation)
 
-        self._health_button = QPushButton("Health: Not evaluated")
+        self._health_button = QPushButton()
+        self._health_button.setText("Health: Not evaluated")
         self._health_button.setObjectName("brokerHealthSummary")
         self._health_button.setFixedHeight(WORKSPACE_CONTROL_HEIGHT)
+        self._health_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self._health_button.setAccessibleName("Inspect broker health")
         self._health_button.clicked.connect(self.health_requested.emit)
         broker_grid.addWidget(self._profile_selector, 0, 0)
-        broker_grid.addWidget(self._lifecycle_button, 0, 1)
-        broker_grid.addWidget(self._health_button, 1, 0)
-        broker_grid.addWidget(self._inspect_snapshot_button, 1, 1)
+        broker_grid.addWidget(self._manage_button, 0, 1)
+        broker_grid.addWidget(self._lifecycle_button, 0, 2)
+        broker_grid.addWidget(self._health_button, 1, 0, 1, 3)
         self.content_layout.addLayout(broker_grid)
         self.setMaximumHeight(152)
 
@@ -301,9 +323,16 @@ class BrokerConnectionPane(WorkspacePane):
             management_enabled,
         )
         self._profile_selector.setEnabled(management_enabled)
+        self._manage_button.setEnabled(management_enabled)
         lifecycle_text, lifecycle_enabled = self._lifecycle_presentation(busy)
         self._lifecycle_button.setText(lifecycle_text)
         self._lifecycle_button.setEnabled(lifecycle_enabled)
+        self._lifecycle_button.setProperty(
+            "primary",
+            self._status in {"disconnected", "connecting"},
+        )
+        self._lifecycle_button.style().unpolish(self._lifecycle_button)
+        self._lifecycle_button.style().polish(self._lifecycle_button)
         health = view_model.health_summary
         counts = self._compact_health_counts(health.label, health.counts)
         suffix = f" · {counts}" if counts else ""
