@@ -177,11 +177,7 @@ class HealthExpectationService:
             for current in self._require_current_topics_reader()(broker_id)
         }
         subscriptions = self._read_subscriptions(broker_id)
-        observation_health = self._observation_health(
-            metadata,
-            expectations,
-            subscriptions,
-        )
+        observation_health = self._observation_health(metadata)
 
         topic_findings: list[ExpectationEvaluation] = []
         for expectation in expectations:
@@ -441,8 +437,6 @@ class HealthExpectationService:
     def _observation_health(
         self,
         metadata: ObserverRepoMetadata,
-        expectations: tuple[HealthExpectation, ...],
-        subscriptions: tuple[Subscription, ...] | None,
     ) -> ObservationHealth:
         findings: list[ObservationHealthFinding] = []
         if _status_value(metadata.connection_status) != ConnectionStatus.CONNECTED:
@@ -494,28 +488,6 @@ class HealthExpectationService:
                     ObservationFindingCode.SUBSCRIPTION_REJECTED,
                     HealthStatus.PROBLEM,
                     f"The broker rejected {rejected} subscription(s).",
-                )
-            )
-        topic_expectations = tuple(
-            expectation
-            for expectation in expectations
-            if isinstance(expectation.target, TopicTarget)
-        )
-        unavailable = sum(
-            1
-            for expectation in topic_expectations
-            if subscriptions is None
-            or not any(
-                mqtt_filter_matches(item.topic_filter, expectation.target.topic)
-                for item in subscriptions
-            )
-        )
-        if unavailable and not subscription_failures:
-            findings.append(
-                ObservationHealthFinding(
-                    ObservationFindingCode.SUBSCRIPTION_UNAVAILABLE,
-                    HealthStatus.PROBLEM,
-                    f"{unavailable} expected topic(s) are not subscribed.",
                 )
             )
         return ObservationHealth(

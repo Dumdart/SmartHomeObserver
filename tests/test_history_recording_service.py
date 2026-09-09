@@ -103,6 +103,33 @@ def test_checkpoint_failure_is_explicit_without_corrupting_event_store(history_s
     assert persisted.pending == 0
 
 
+def test_successful_final_checkpoint_clears_transient_failure(history_store):
+    db, store, broker = history_store
+    settings = HistoryRecordingRepository(db)
+    service = HistoryRecordingService(store, settings)
+    service.set_enabled(broker, True)
+    checkpoint = settings.checkpoint
+    attempted = Event()
+
+    def fail_once(*args, **kwargs):
+        attempted.set()
+        raise RuntimeError("synthetic failure")
+
+    settings.checkpoint = Mock(side_effect=fail_once)
+    service.record(event(broker))
+    service.flush()
+    assert attempted.wait(2)
+    assert service.status(broker).checkpoint_failed
+
+    settings.checkpoint = checkpoint
+    service.close()
+
+    assert not service.status(broker).checkpoint_failed
+    persisted = HistoryRecordingRepository(db).status(broker)
+    assert persisted.committed == 1
+    assert not persisted.previous_unclean
+
+
 def test_broker_drain_failure_aborts_deletion_and_restores_admission(history_store):
     from concurrent.futures import ThreadPoolExecutor
 

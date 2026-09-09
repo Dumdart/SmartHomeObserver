@@ -167,6 +167,12 @@ class HistoryRecordingService:
                         self._statuses[broker_id] = replace(
                             self._statuses[broker_id], checkpoint_failed=True,
                         )
+            else:
+                with self._condition:
+                    if broker_id in self._statuses:
+                        self._statuses[broker_id] = replace(
+                            self._statuses[broker_id], checkpoint_failed=False,
+                        )
 
     def _run(self) -> None:
         while True:

@@ -261,7 +261,7 @@ def test_numeric_range_keeps_generic_stale_value_guard(tmp_path) -> None:
     database.dispose()
 
 
-def test_unsubscribed_topic_state_condition_remains_unknown(tmp_path) -> None:
+def test_unsubscribed_topic_does_not_make_broker_unhealthy(tmp_path) -> None:
     database = DatabaseContext(f"sqlite:///{tmp_path / 'unsubscribed-exists.db'}")
     broker_id = uuid4()
     item = replace(_expectation(broker_id), condition=TopicExistsCondition())
@@ -272,13 +272,17 @@ def test_unsubscribed_topic_state_condition_remains_unknown(tmp_path) -> None:
         subscriptions=(),
     )
 
-    finding = evaluator.evaluate_broker(
+    report = evaluator.evaluate_broker(
         broker_id,
         evaluated_at=NOW,
-    ).topic_findings[0]
+    )
 
+    finding = report.topic_findings[0]
     assert finding.status is HealthStatus.UNKNOWN
     assert finding.failure_code == "SUBSCRIPTION_UNAVAILABLE"
+    assert report.observation_health.status is HealthStatus.HEALTHY
+    assert report.observation_health.findings == ()
+    assert report.aggregate_status is HealthStatus.UNKNOWN
     database.dispose()
 
 
@@ -338,6 +342,7 @@ def test_observation_failures_are_separate_from_topic_findings(tmp_path) -> None
             observation_started_at=None,
             dropped_message_count=2,
             recording_failure_count=1,
+            subscription_failure_count=1,
             subscription_rejected_count=1,
         ),
         subscriptions=(),
