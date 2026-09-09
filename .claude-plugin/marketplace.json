@@ -8,7 +8,7 @@
       "name": "topicgate",
       "source": "./topicgate-plugin",
       "description": "Secure local access to MQTT state through TopicGate",
-      "version": "1.4.0"
+      "version": "1.5.0"
     }
   ]
 }
