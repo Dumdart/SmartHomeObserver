@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -16,6 +15,7 @@ from topicgate.app.models.integration import (
     McpServerState,
     PlatformIntegrationState,
 )
+from topicgate.infrastructure.integrations._plugin_cli import _normal_path
 
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
@@ -59,11 +59,13 @@ class CodexIntegration:
             for line in marketplace_output.splitlines()
             if line.strip() and not line.startswith("MARKETPLACE")
         )
-        plugin_version = self._plugin_version(plugin_output)
+        plugin_version, plugin_enabled = self._plugin_state(plugin_output)
         servers = self._mcp_servers(mcp_output)
         issues: list[str] = []
         if not plugin_version:
             issues.append("TopicGate plugin is not installed.")
+        elif not plugin_enabled:
+            issues.append("TopicGate plugin is disabled.")
         if not servers:
             issues.append("TopicGate MCP server is not configured.")
         if len(servers) > 1:
@@ -77,6 +79,7 @@ class CodexIntegration:
             plugin_version=plugin_version,
             servers=servers,
             issues=tuple(issues),
+            plugin_enabled=plugin_enabled,
         )
 
     def plan(self, desired: IntegrationSpec) -> IntegrationPlan:
@@ -102,9 +105,10 @@ class CodexIntegration:
                 )
             )
 
-        if self._base_version(current.plugin_version) != self._base_version(
-            desired.package_version
-        ):
+        plugin_outdated = self._base_version(
+            current.plugin_version
+        ) != self._base_version(desired.package_version)
+        if plugin_outdated or current.plugin_enabled is False:
             actions.append(
                 IntegrationAction(
                     IntegrationActionKind.INSTALL_PLUGIN,
@@ -151,7 +155,12 @@ class CodexIntegration:
                 messages.append("Refreshed the TopicGate marketplace.")
             elif action.kind is IntegrationActionKind.INSTALL_PLUGIN:
                 self._execute(("plugin", "add", action.target))
-                messages.append("Installed the TopicGate plugin.")
+                verb = (
+                    "Enabled"
+                    if plan.current.plugin_enabled is False
+                    else "Installed"
+                )
+                messages.append(f"{verb} the TopicGate plugin.")
             elif action.kind is IntegrationActionKind.REMOVE_SERVER:
                 self._remove_server(action.target)
                 messages.append(f"Removed MCP server {action.target}.")
@@ -233,13 +242,16 @@ class CodexIntegration:
         )
 
     @staticmethod
-    def _plugin_version(output: str) -> str | None:
+    def _plugin_state(output: str) -> tuple[str | None, bool | None]:
         pattern = re.compile(
-            rf"^\s*{re.escape(_PLUGIN_SELECTOR)}\s+installed,\s+\w+\s+(\S+)",
+            rf"^\s*{re.escape(_PLUGIN_SELECTOR)}\s+installed,\s+"
+            rf"(enabled|disabled)\s+(\S+)",
             re.MULTILINE,
         )
         match = pattern.search(output)
-        return match.group(1) if match else None
+        if match is None:
+            return None, None
+        return match.group(2), match.group(1) == "enabled"
 
     @staticmethod
     def _mcp_servers(output: str) -> tuple[McpServerState, ...]:
@@ -282,15 +294,10 @@ class CodexIntegration:
         if server is None:
             return False
         return (
-            CodexIntegration._normal_path(server.command)
-            == CodexIntegration._normal_path(desired.command)
+            _normal_path(server.command) == _normal_path(desired.command)
             and server.arguments == desired.arguments
             and server.environment == tuple(sorted(desired.environment))
         )
-
-    @staticmethod
-    def _normal_path(value: str) -> str:
-        return str(Path(value).expanduser().resolve()).casefold()
 
     @staticmethod
     def _base_version(value: str | None) -> str | None:

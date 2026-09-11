@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import stat
+import tempfile
 from typing import Any
 
 from topicgate.app.models.integration import (
@@ -151,12 +153,28 @@ class CursorIntegration(PluginCliIntegration):
 
     def _write_configuration(self, payload: dict[str, Any]) -> None:
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = self._config_path.with_suffix(".json.topicgate.tmp")
-        temporary_path.write_text(
-            json.dumps(payload, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        os.replace(temporary_path, self._config_path)
+        try:
+            file_mode = stat.S_IMODE(self._config_path.stat().st_mode)
+        except FileNotFoundError:
+            file_mode = 0o600
+
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self._config_path.parent,
+                prefix=f".{self._config_path.name}.",
+                suffix=".topicgate.tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                temporary_file.write(json.dumps(payload, indent=2) + "\n")
+            os.chmod(temporary_path, file_mode)
+            os.replace(temporary_path, self._config_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     @staticmethod
     def _server_state(name: str, value: dict[str, Any]) -> McpServerState:

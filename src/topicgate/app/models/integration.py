@@ -17,10 +17,19 @@ class McpServerState:
 
     @property
     def mode(self) -> McpMode | None:
+        value: str | None = None
+        for index, argument in enumerate(self.arguments):
+            if argument == "--mode":
+                value = (
+                    self.arguments[index + 1]
+                    if index + 1 < len(self.arguments)
+                    else None
+                )
+            elif argument.startswith("--mode="):
+                value = argument.removeprefix("--mode=")
         try:
-            index = self.arguments.index("--mode")
-            return McpMode(self.arguments[index + 1])
-        except (ValueError, IndexError):
+            return McpMode(value)
+        except (TypeError, ValueError):
             return None
 
 
@@ -33,6 +42,7 @@ class PlatformIntegrationState:
     plugin_version: str | None = None
     servers: tuple[McpServerState, ...] = ()
     issues: tuple[str, ...] = ()
+    plugin_enabled: bool | None = None
 
 
 class IntegrationActionKind(StrEnum):

@@ -2,6 +2,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from topicgate.app.models.integration import (
     IntegrationActionKind,
     IntegrationPlan,
@@ -77,6 +79,23 @@ def test_repair_preserves_the_single_configured_mode() -> None:
     assert expected.state is result.state
 
 
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    (
+        (("--mode=control",), McpMode.CONTROL),
+        (("--mode", "read-only", "--mode=control"), McpMode.CONTROL),
+        (("--mode=control", "--mode", "read-only"), McpMode.READ_ONLY),
+    ),
+)
+def test_mcp_server_mode_supports_equals_form_and_last_occurrence(
+    arguments: tuple[str, ...],
+    expected: McpMode,
+) -> None:
+    server = McpServerState("topicgate", "topicgate", arguments)
+
+    assert server.mode is expected
+
+
 def test_status_reports_package_plugin_version_mismatch() -> None:
     platform = MagicMock()
     platform.name = "codex"
@@ -102,3 +121,29 @@ def test_status_reports_package_plugin_version_mismatch() -> None:
         "TopicGate plugin version does not match the installed "
         "TopicGate package 1.5.2.",
     )
+
+
+def test_status_does_not_report_a_disabled_plugin_as_outdated() -> None:
+    platform = MagicMock()
+    platform.name = "codex"
+    current = PlatformIntegrationState(
+        "codex",
+        available=True,
+        marketplace_configured=True,
+        plugin_installed=True,
+        plugin_version="1.5.2",
+        plugin_enabled=False,
+        issues=("TopicGate plugin is disabled.",),
+    )
+    platform.inspect.return_value = current
+    platform.plan.return_value = IntegrationPlan(
+        desired=MagicMock(),
+        current=current,
+        actions=(
+            SimpleNamespace(kind=IntegrationActionKind.INSTALL_PLUGIN),
+        ),
+    )
+
+    state = service().status(platform)
+
+    assert state.issues == ("TopicGate plugin is disabled.",)

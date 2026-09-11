@@ -54,6 +54,7 @@ class IntegrationService:
             issues.append("TopicGate marketplace is not configured.")
         if (
             state.plugin_installed
+            and state.plugin_enabled is not False
             and IntegrationActionKind.INSTALL_PLUGIN in action_kinds
         ):
             issues.append(

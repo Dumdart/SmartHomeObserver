@@ -1,6 +1,10 @@
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
+
+import pytest
 
 from topicgate.app.models.integration import IntegrationSpec, McpMode
 from topicgate.infrastructure.integrations.cursor import CursorIntegration
@@ -112,3 +116,21 @@ def test_uninstall_removes_only_topicgate_mcp_entries(tmp_path: Path) -> None:
     assert result.changed
     assert payload["mcpServers"] == {"other": {"command": "other"}}
     assert host.marketplace
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix permission semantics")
+def test_install_preserves_existing_configuration_permissions(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "mcp.json"
+    config_path.write_text('{"mcpServers": {}}', encoding="utf-8")
+    config_path.chmod(0o600)
+    integration = CursorIntegration(
+        executable="cursor-agent",
+        runner=FakeCursor(),
+        config_path=config_path,
+    )
+
+    integration._configure_server(desired())
+
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600

@@ -14,6 +14,7 @@ class FakeCodex:
     def __init__(self) -> None:
         self.marketplace = False
         self.plugin_version: str | None = None
+        self.plugin_enabled = True
         self.servers: dict[str, dict] = {}
         self.commands: list[tuple[str, ...]] = []
 
@@ -30,7 +31,8 @@ class FakeCodex:
             if self.plugin_version:
                 stdout = (
                     "PLUGIN STATUS VERSION SOURCE\n"
-                    f"topicgate@topicgate installed, enabled "
+                    "topicgate@topicgate installed, "
+                    f"{'enabled' if self.plugin_enabled else 'disabled'} "
                     f"{self.plugin_version} C:/topicgate\n"
                 )
         elif operation == ("mcp", "list", "--json"):
@@ -41,6 +43,7 @@ class FakeCodex:
             pass
         elif operation[:2] == ("plugin", "add"):
             self.plugin_version = "1.5.2"
+            self.plugin_enabled = True
         elif operation[:2] == ("plugin", "remove"):
             self.plugin_version = None
         elif operation[:2] == ("mcp", "remove"):
@@ -131,6 +134,39 @@ def test_apply_installs_plugin_and_leaves_one_exact_mcp_server() -> None:
     assert server.mode is McpMode.CONTROL
     assert server.environment == (("TOPICGATE_DATA_DIR", "C:/TopicGate/data"),)
     assert not integration.plan(desired()).actions
+
+
+def test_apply_reenables_a_disabled_plugin() -> None:
+    host = FakeCodex()
+    host.marketplace = True
+    host.plugin_version = "1.5.2"
+    host.plugin_enabled = False
+    specification = desired()
+    host.servers["topicgate"] = {
+        "name": "topicgate",
+        "transport": {
+            "type": "stdio",
+            "command": specification.command,
+            "args": list(specification.arguments),
+            "env": dict(specification.environment),
+        },
+    }
+    integration = CodexIntegration(executable="codex", runner=host)
+
+    plan = integration.plan(specification)
+
+    assert plan.current.plugin_installed
+    assert plan.current.plugin_enabled is False
+    assert plan.current.issues == ("TopicGate plugin is disabled.",)
+    assert tuple(action.kind for action in plan.actions) == (
+        IntegrationActionKind.INSTALL_PLUGIN,
+    )
+
+    result = integration.apply(plan)
+
+    assert result.state.plugin_enabled is True
+    assert result.messages[0] == "Enabled the TopicGate plugin."
+    assert not integration.plan(specification).actions
 
 
 def test_remove_deletes_plugin_and_both_known_server_names() -> None:

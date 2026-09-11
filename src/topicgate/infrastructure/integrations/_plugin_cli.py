@@ -5,6 +5,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from topicgate.app.models.integration import (
     IntegrationAction,
@@ -18,6 +19,11 @@ from topicgate.app.models.integration import (
 
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+
+
+def _normal_path(value: str) -> str:
+    normalized = str(Path(value).expanduser().resolve())
+    return normalized.casefold() if sys.platform == "win32" else normalized
 
 
 class PluginCliIntegration(ABC):
@@ -200,7 +206,7 @@ class PluginCliIntegration(ABC):
 
     @staticmethod
     def _normal_path(value: str) -> str:
-        return str(Path(value).expanduser().resolve()).casefold()
+        return _normal_path(value)
 
     @staticmethod
     def _base_version(value: str | None) -> str | None:
