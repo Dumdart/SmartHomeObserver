@@ -32,38 +32,29 @@ physical hardware, use the [Zigbee2MQTT scenario](demo/zigbee2mqtt_scenario/READ
 
 ## Get started
 
-TopicGate requires Python 3.11+ and an MQTT 5-compatible broker.
-
-1. Follow [Install TopicGate by operating system](docs/install/OS_INSTALL.md).
-2. Run `topicgate-gui`.
-3. Configure a broker profile and add a bounded filter such as `home/+/temperature` or `devices/#`.
-4. Add TopicGate to your agent host using one of the [connection guides](#connect-an-agent) below. The host launches the MCP server.
-
-The default MCP configuration is:
-
-```json
-{
-  "mcpServers": {
-    "topicgate": {
-      "command": "topicgate",
-      "args": ["--mode", "read-only"]
-    }
-  }
-}
-```
-
-If `topicgate` is not on the host's `PATH`, use the absolute executable path shown by TopicGate Desktop's MCP setup page.
+1. [Install TopicGate for your operating system](docs/install/OS_INSTALL.md).
+2. Run `topicgate-gui` to open **TopicGate Desktop**.
+3. Add a broker profile, enter its credentials locally, connect, and add a bounded subscription such as `home/+/temperature`.
+4. If you want AI access, connect your agent host using a guide below. Desktop works without an agent or MCP configuration.
+5. Keep **read-only mode**, the default for the MCP server and plugin.
+6. Only when you need agent-driven changes, explicitly [enable control mode](docs/install/CONTROL_AND_HEALTH.md) in a trusted environment.
 
 ## Connect an agent
 
-Configure a broker in TopicGate Desktop for read-only use, or use the authorized [control provisioning and health workflow](docs/install/CONTROL_AND_HEALTH.md).
+A **plugin integration** loads TopicGate's agent skills and MCP configuration.
+An **MCP-only integration** connects the MCP server without TopicGate's skills.
+Install the application first; installing a plugin does not install TopicGate or enable control mode.
 
-| Host | Guide |
+| Host | Plugin and MCP-only setup |
 | --- | --- |
 | Codex | [Codex](docs/install/CODEX.md) |
 | Claude Code | [Claude Code](docs/install/CLAUDE_CODE.md) |
-| VS Code / GitHub Copilot | [VS Code and GitHub Copilot](docs/install/VSCODE_COPILOT.md) |
 | Cursor | [Cursor](docs/install/CURSOR.md) |
+| VS Code / GitHub Copilot CLI | [VS Code and GitHub Copilot](docs/install/VSCODE_COPILOT.md) |
+
+The host normally starts the MCP server. Restart it and start a new agent session
+after changing MCP configuration. **Help → MCP setup...** in TopicGate Desktop
+provides the resolved executable, data directory, and a configuration to copy.
 
 ## Observation semantics
 
@@ -115,7 +106,7 @@ Health results distinguish **healthy**, **problem**, and **unknown**. A health w
 
 ### Let an agent configure and verify health
 
-With TopicGate 1.4+ and a control-mode server configured, try:
+With control mode explicitly enabled, try:
 
 > Create or reuse an anonymous broker named Lab at localhost:1883 without TLS. Activate it, subscribe to devices/#, and add an expectation that devices/status equals the UTF-8 value online. Wait up to 30 seconds for health and report any failed or unknown checks. Do not publish a test message.
 
@@ -132,7 +123,7 @@ See [Control mode and expectation verification](docs/install/CONTROL_AND_HEALTH.
 | Snapshots | `get_broker_snapshot`, `inspect_broker` | `observe_broker_snapshot` |
 | Brokers | `list_brokers` | `create_broker`, `activate_broker` |
 | Connection | `get_connection_status` | `connect`, `disconnect`, `reconnect` |
-| Topics | `list_topics`, `get_topic_state` | — |
+| Topics | `list_topics`, `get_topic_state`, `get_topic_history` | — |
 | Subscriptions | `list_subscriptions` | `add_subscription`, `update_subscription`, `remove_subscription` |
 | Expectations | `list_health_expectations` | `create_health_expectation`, `update_health_expectation`, `delete_health_expectation` |
 | Health | `query_failure_history` | `get_health_report`, `wait_for_broker_health` |
@@ -140,13 +131,9 @@ See [Control mode and expectation verification](docs/install/CONTROL_AND_HEALTH.
 | Publishing | — | `publish` |
 | Dashboard | — | `open_topicgate_dashboard` |
 
-Control mode includes the passive tools. Configure your trusted host to launch:
+The optional dashboard also requires the `apps` package extra and a host that supports MCP apps.
 
-```console
-topicgate --mode control
-```
-
-Restart the MCP server after changing mode. The plugin's default configuration stays read-only; shipping `.mcp-control.json` does not enable it automatically. Follow the [host setup instructions](docs/install/CONTROL_AND_HEALTH.md) to select a control entry.
+Control mode includes the passive tools. The plugin's default configuration stays read-only; shipping `.mcp-control.json` does not enable it automatically. Follow [Control mode and health](docs/install/CONTROL_AND_HEALTH.md) to configure and restart the server.
 
 For troubleshooting, use **Help → Export support bundle…** in Desktop or call
 `get_support_bundle` through MCP. Desktop payload inclusion is off by default and

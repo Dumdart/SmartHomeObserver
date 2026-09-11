@@ -28,6 +28,7 @@ from topicgate.app.services.broker_snapshot_service import BrokerSnapshotService
 from topicgate.app.services.broker_resolver import BrokerResolver
 from topicgate.app.services.control_operation_service import ControlOperationService
 from topicgate.app.services.mcp_setup_service import McpSetupService
+from topicgate.app.services.integration_service import IntegrationService
 from topicgate.app.broker_runtime_state import BrokerRuntimeState
 from topicgate.app.services.support_bundle_export_service import (
     SupportBundleExporter,
@@ -252,6 +253,7 @@ class AppDependencies:
             active_broker_reader=self.broker_profiles.get_profile_summary,
             subscriptions_reader=self.broker_profiles.list_subscriptions,
         )
+        self.integration_service = IntegrationService(self.mcp_setup.information)
         self.support_bundle_service = SupportBundleService(
             self.runtime,
             self.snapshot_service,

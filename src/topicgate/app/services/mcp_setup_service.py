@@ -46,6 +46,13 @@ class McpSetupService:
         self._broker_reader = broker_reader
         self._active_broker_reader = active_broker_reader
         self._subscriptions_reader = subscriptions_reader
+        self.information = self.resolve_information(data_path, database_path)
+
+    @staticmethod
+    def resolve_information(
+        data_path: Path,
+        database_path: Path,
+    ) -> McpSetupInformation:
         executable = shutil.which("topicgate")
         if executable:
             command = str(Path(executable).resolve())
@@ -57,7 +64,7 @@ class McpSetupService:
             installed_version = version("topicgate")
         except PackageNotFoundError:
             installed_version = "development"
-        self.information = McpSetupInformation(
+        return McpSetupInformation(
             version=installed_version,
             executable_path=Path(command),
             data_path=data_path.resolve(),

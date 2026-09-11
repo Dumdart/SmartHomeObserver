@@ -3,7 +3,14 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from topicgate.cli.topicgate_cli import main
+from topicgate.app.models.integration import (
+    IntegrationResult,
+    McpMode,
+    PlatformIntegrationState,
+)
 from topicgate.core.models.subscription import Subscription
 
 
@@ -188,3 +195,77 @@ def test_subscription_list_has_stable_tab_separated_output(capsys) -> None:
 
     assert result == 0
     assert capsys.readouterr().out == "zigbee2mqtt/#\t1\tTrue\t0\n"
+
+
+def test_integration_install_defaults_to_read_only(capsys) -> None:
+    service = MagicMock()
+    state = PlatformIntegrationState("codex", available=True)
+    service.install.return_value = IntegrationResult(
+        state, changed=True, messages=("Configured Codex.",)
+    )
+    dependencies = SimpleNamespace(integration_service=service)
+
+    with (
+        patch(
+            "topicgate.cli.topicgate_cli.IntegrationDependencies",
+            return_value=dependencies,
+        ),
+        patch("topicgate.cli.integration_commands.CodexIntegration"),
+    ):
+        result = main(["integration", "install", "codex"])
+
+    assert result == 0
+    assert service.install.call_args.args[1] is McpMode.READ_ONLY
+    assert capsys.readouterr().out == "Configured Codex.\n"
+
+
+def test_integration_repair_preserves_mode_by_default() -> None:
+    service = MagicMock()
+    state = PlatformIntegrationState("codex", available=True)
+    service.repair.return_value = IntegrationResult(state, changed=False)
+    dependencies = SimpleNamespace(integration_service=service)
+
+    with (
+        patch(
+            "topicgate.cli.topicgate_cli.IntegrationDependencies",
+            return_value=dependencies,
+        ),
+        patch("topicgate.cli.integration_commands.CodexIntegration"),
+    ):
+        result = main(["integration", "repair", "codex"])
+
+    assert result == 0
+    assert service.repair.call_args.args[1] is None
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "adapter_name"),
+    (
+        ("claude", "ClaudeIntegration"),
+        ("cursor", "CursorIntegration"),
+        ("copilot", "CopilotIntegration"),
+    ),
+)
+def test_integration_install_dispatches_supported_platforms(
+    platform_name: str,
+    adapter_name: str,
+) -> None:
+    service = MagicMock()
+    state = PlatformIntegrationState(platform_name, available=True)
+    service.install.return_value = IntegrationResult(state, changed=False)
+    dependencies = SimpleNamespace(integration_service=service)
+
+    with (
+        patch(
+            "topicgate.cli.topicgate_cli.IntegrationDependencies",
+            return_value=dependencies,
+        ),
+        patch(f"topicgate.cli.integration_commands.{adapter_name}") as adapter,
+    ):
+        result = main(["integration", "install", platform_name])
+
+    assert result == 0
+    assert service.install.call_args.args == (
+        adapter.return_value,
+        McpMode.READ_ONLY,
+    )
