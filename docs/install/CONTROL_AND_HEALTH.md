@@ -1,16 +1,26 @@
 # Control mode and expectation verification
 
-Individual MQTT receipt history is separate from health failure episodes and
-latest-state snapshots. Enable it per broker under **Stored observations → History
-settings**, then use **Event history** or read-only `get_topic_history`. Recording
-starts disabled; large age/count/size limits can slow startup and queries. See
-[history setup, retention, and completeness](../OBSERVATION_HISTORY.md).
+## Explicitly enable control mode
 
-TopicGate 1.4 adds profile creation, health expectation lifecycle tools, and bounded health waiting. The plugin remains read-only by default. `.mcp-control.json` is an example control entry; its presence does not select it in the plugin manifest.
+Read-only mode is the normal setup. Control mode adds broker creation/activation, connection changes, subscription and expectation changes, fresh health evaluation, live observation, and publishing. Enable it only for a trusted agent environment. Publishing can affect real devices: confirm the broker, topic, payload, encoding, QoS, and retain setting first.
 
-Follow the existing host instructions for [Codex](CODEX.md), [Claude Code](CLAUDE_CODE.md), [Cursor](CURSOR.md), or [VS Code/Copilot](VSCODE_COPILOT.md). Codex and Claude guides show separate `topicgate-control` entries. Cursor uses `.cursor/mcp.json`; VS Code uses `.vscode/mcp.json` with `servers`. Set only the explicitly selected entry to `topicgate --mode control`, using the executable installed in that host's environment. Do not run multiple competing control processes against the same database. Do not edit cached plugin manifests as a durable setup method.
+Installing TopicGate or its plugin does not enable control mode. The plugin selects a read-only configuration; the bundled `.mcp-control.json` is an example, not an automatically loaded override.
 
-Restart the configured MCP server or host and open a new task after changing configuration or upgrading the package. Verify exposed tools: `activate_broker` means control tools are enabled; `list_health_expectations` should be available in both modes on 1.4+. Activation without the new creation/wait tools suggests an older executable or stale process. New listing without mutation tools indicates read-only mode. Package upgrades must use the interpreter that owns the host's `topicgate` executable. Never silently increase host capabilities.
+Follow your host's guide: [Codex](CODEX.md), [Claude Code](CLAUDE_CODE.md), [Cursor](CURSOR.md), or [VS Code / Copilot](VSCODE_COPILOT.md). For the supported CLI integrations, explicitly choose the host, for example:
+
+```console
+topicgate-cli integration install codex --mode control
+```
+
+Replace `codex` with `claude`, `cursor`, or `copilot` as appropriate. Cursor still needs interactive plugin installation for skills. The helpers manage known entries, not every host scope; Claude's namespaced plugin server may remain enabled alongside a manual entry. Inspect the host's enabled servers rather than assuming there is only one.
+
+For MCP-only setup, configure the existing entry to launch `topicgate --mode control`. In JSON this means `"args": ["--mode", "control"]`; preserve any executable-prefix arguments and data-directory environment from Desktop. VS Code uses `servers`, while Cursor uses `mcpServers`. Do not edit cached plugin manifests or start competing control processes against the same database.
+
+Restart the MCP server/host and start a new task or session after changing mode or upgrading. Verify that `activate_broker`, `create_broker`, and `wait_for_broker_health` are exposed. `list_health_expectations` alone does not imply control mode. Missing tools may indicate read-only configuration, an older executable, or a stale process. See [upgrade and recovery](UPGRADE_AND_RECOVERY.md).
+
+To return to read-only with a helper-managed integration, run the install command with `--mode read-only` and restart the host. For MCP-only setup, change the existing entry back to read-only and restart. Desktop's configuration-mode selector only generates a preview; it does not change a running MCP server's permissions.
+
+## Credentials and broker selection
 
 Anonymous broker creation is supported. A username without stored credentials saves a profile with `status: needs_credentials`; configure that UUID in Desktop before continuing. No raw password or credential_ref is accepted. Existing credentials are keyed by profile UUID. Broker switching disconnects the current connection and leaves the selected broker active after the workflow. Publishing is a separate explicit action.
 
@@ -34,7 +44,7 @@ See the [plugin contract](../../topicgate-plugin/CONTRACT.md) for transaction se
 
 ## Define checks in Desktop
 
-Open **Health → Expectations** to configure a broker connection check. For a concrete topic, select it in the observer tree and open **Settings → Expectations**. Add a covering subscription before creating a topic expectation. The overview shows the evaluation result and evidence; history records failure episodes when the storage action is enabled.
+Open **Health → Expectations** to configure a broker connection check. For a concrete topic, select it in the observer tree and use **Topic expectations**. Add a covering subscription before creating a topic expectation. The overview shows the evaluation result and evidence; history records failure episodes when the storage action is enabled.
 
 ![Sample broker expectation editor showing the connected condition and history actions.](../images/desktop-expectations.png)
 
@@ -56,3 +66,9 @@ An empty or all-disabled expectation set cannot satisfy verification. Invalid bo
 ![Sample health overview with failed and unknown checks and their evidence.](../images/desktop-health.png)
 
 *Connection state and expectation health are separate. Limited observations can leave a check unknown even while the connection is established.*
+
+## Observation history and support
+
+Individual MQTT receipt history is separate from health failure episodes and latest-state snapshots. Open **History** and enable **Record messages** for the displayed broker; recording starts disabled. Use read-only `get_topic_history` to inspect saved receipts. In Advanced mode, **Stored observations → History settings** controls retention limits. See [history setup and completeness](../OBSERVATION_HISTORY.md).
+
+For troubleshooting, see [support bundles and safe sharing](SUPPORT_BUNDLES.md). Broker credentials remain local and passwords are never passed through MCP.

@@ -2,7 +2,7 @@
 
 - Supports TopicGate 1.4+ for provisioning/health workflow additions; preserves MCP contract `1.0` public names and arguments. Discover tool exposure when using older 1.x servers.
 - Uses Agent Plugins 1.0 contracts validated by the repository tests for Codex, Claude Code, GitHub Copilot, and Cursor.
-- `.mcp.json` and `mcp.json` are read-only. Use `.mcp-control.json` only for intentional connection, subscription, observation, or publish changes.
+- `.mcp.json` and `mcp.json` select read-only mode. `.mcp-control.json` is an example and is not activated by installing the plugin. Explicitly configure control mode only for intended privileged operations; follow the [host setup guides](https://github.com/Dumdart/TopicGate#connect-an-agent) and restart the MCP session.
 - TopicGate Desktop owns credentials, retention, cache deletion, and complex maintenance.
 
 ## Additive tools
