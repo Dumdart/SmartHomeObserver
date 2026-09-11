@@ -4,6 +4,8 @@ import argparse
 from collections.abc import Sequence
 
 from topicgate.app.app_dependencies import AppDependencies
+from topicgate.app.integration_dependencies import IntegrationDependencies
+from topicgate.cli.integration_commands import configure_integration_commands
 from topicgate.cli.profile_commands import configure_profile_commands
 from topicgate.cli.subscription_commands import configure_subscription_commands
 
@@ -20,6 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     subscription_parser = commands.add_parser("sub", help="Manage subscriptions")
     configure_subscription_commands(subscription_parser, AppDependencies)
+
+    integration_parser = commands.add_parser("integration", help="Manage integrations")
+    configure_integration_commands(integration_parser, IntegrationDependencies)
 
     return parser
 
