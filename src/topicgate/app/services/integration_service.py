@@ -60,7 +60,10 @@ class IntegrationService:
                 "TopicGate plugin version does not match the installed "
                 f"TopicGate package {self._information.version}."
             )
-        if IntegrationActionKind.CONFIGURE_SERVER in action_kinds:
+        if (
+            state.servers
+            and IntegrationActionKind.CONFIGURE_SERVER in action_kinds
+        ):
             issues.append(
                 "TopicGate MCP configuration does not match the resolved "
                 "executable, mode, or data directory."

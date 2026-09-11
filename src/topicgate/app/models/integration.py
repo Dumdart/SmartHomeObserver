@@ -13,6 +13,7 @@ class McpServerState:
     command: str
     arguments: tuple[str, ...]
     environment: tuple[tuple[str, str], ...] = ()
+    source: str | None = None
 
     @property
     def mode(self) -> McpMode | None:

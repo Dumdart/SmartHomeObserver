@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from topicgate.cli.topicgate_cli import main
 from topicgate.app.models.integration import (
     IntegrationResult,
@@ -208,7 +210,7 @@ def test_integration_install_defaults_to_read_only(capsys) -> None:
             "topicgate.cli.topicgate_cli.IntegrationDependencies",
             return_value=dependencies,
         ),
-        patch("topicgate.cli.platform_commands.codex_commands.CodexIntegration"),
+        patch("topicgate.cli.integration_commands.CodexIntegration"),
     ):
         result = main(["integration", "install", "codex"])
 
@@ -228,9 +230,42 @@ def test_integration_repair_preserves_mode_by_default() -> None:
             "topicgate.cli.topicgate_cli.IntegrationDependencies",
             return_value=dependencies,
         ),
-        patch("topicgate.cli.platform_commands.codex_commands.CodexIntegration"),
+        patch("topicgate.cli.integration_commands.CodexIntegration"),
     ):
         result = main(["integration", "repair", "codex"])
 
     assert result == 0
     assert service.repair.call_args.args[1] is None
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "adapter_name"),
+    (
+        ("claude", "ClaudeIntegration"),
+        ("cursor", "CursorIntegration"),
+        ("copilot", "CopilotIntegration"),
+    ),
+)
+def test_integration_install_dispatches_supported_platforms(
+    platform_name: str,
+    adapter_name: str,
+) -> None:
+    service = MagicMock()
+    state = PlatformIntegrationState(platform_name, available=True)
+    service.install.return_value = IntegrationResult(state, changed=False)
+    dependencies = SimpleNamespace(integration_service=service)
+
+    with (
+        patch(
+            "topicgate.cli.topicgate_cli.IntegrationDependencies",
+            return_value=dependencies,
+        ),
+        patch(f"topicgate.cli.integration_commands.{adapter_name}") as adapter,
+    ):
+        result = main(["integration", "install", platform_name])
+
+    assert result == 0
+    assert service.install.call_args.args == (
+        adapter.return_value,
+        McpMode.READ_ONLY,
+    )
