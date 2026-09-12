@@ -41,6 +41,10 @@ jobs:
           uv python install 3.11
           uv venv --python 3.11
 
+      - name: Install Linux GUI system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libegl1
+
       - name: Build release wheel
         run: |
           if [[ "${RUNNER_OS}" == "Windows" ]]; then

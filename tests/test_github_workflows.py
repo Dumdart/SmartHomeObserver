@@ -16,3 +16,10 @@ def test_workflows_only_use_repository_owned_actions() -> None:
                     external_actions.append(f"{workflow}:{line_number}: {action}")
 
     assert external_actions == []
+
+
+def test_distribution_smoketests_install_linux_gui_dependencies() -> None:
+    workflow = (WORKFLOWS / "smoketests.yml").read_text(encoding="utf-8")
+
+    assert "if: runner.os == 'Linux'" in workflow
+    assert "sudo apt-get install --yes libegl1" in workflow

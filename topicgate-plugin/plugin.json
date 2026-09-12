@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "topicgate",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Inspect local MQTT state and configure health expectations with optional TopicGate control tools",
   "author": {
     "name": "Dumdart",

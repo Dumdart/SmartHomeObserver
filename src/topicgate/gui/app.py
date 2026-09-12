@@ -88,9 +88,9 @@ def create_startup_pixmap(logo: QPixmap) -> QPixmap:
     painter.setPen(QColor("#4b5563"))
     painter.setFont(QFont("Segoe UI", 10))
     painter.drawText(
-        QRectF(28, 174, 504, 24),
+        QRectF(28, 174, 504, 24),W
         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        "Broker state and local tools stay on this device.",
+        "TopicGate stores broker state locally; connected agents can inspect observed MQTT data.",
     )
 
     painter.setPen(QPen(QColor("#b8c9db"), 1))
