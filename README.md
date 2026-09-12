@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Observe MQTT state. Define expectations. Check health.</strong><br />
-  A desktop MQTT observer and MCP server for people and AI agents.
+  A desktop MQTT observer with optional MCP access for AI agents.
 </p>
 
 <p align="center">
@@ -15,10 +15,12 @@ TopicGate stores broker credentials and observed MQTT state locally. Explore top
 
 MCP is read-only by default. Profile creation, connection changes, subscription and expectation changes, fresh health evaluation, live observation, and publishing require control mode.
 
+Local storage does not mean agent-visible data stays only inside TopicGate. TopicGate does not send broker data to an agent by itself, but when you connect an agent through MCP, requested broker metadata, topic names, and observed values are returned to the agent host and may be included in model context. Review the agent host and model provider's data policies before connecting sensitive brokers. Broker passwords remain in the operating-system credential store and are never exposed through MCP.
+
 ## Features
 
 - Desktop management for broker profiles, credentials, TLS, subscriptions, observations, and publishing.
-- MCP access to broker health, subscriptions, and observed values with freshness and completeness metadata.
+- Optional MCP access to broker health, subscriptions, and observed values with freshness and completeness metadata.
 - Broker and topic expectations for connection status, expected values, numeric ranges, presence, absence, and freshness, with recorded failure history.
 - A bounded agent health wait that uses the active connection without reconnecting or publishing test messages.
 - MQTT `+` and `#` filters, multiple profiles, UTF-8/base64 payloads, and SQLite persistence.
@@ -39,7 +41,7 @@ physical hardware, use the [Zigbee2MQTT scenario](https://github.com/Dumdart/Top
 5. Keep **read-only mode**, the default for the MCP server and plugin.
 6. Only when you need agent-driven changes, explicitly [enable control mode](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CONTROL_AND_HEALTH.md) in a trusted environment.
 
-## Connect an agent
+## Optional: connect an agent
 
 A **plugin integration** loads TopicGate's agent skills and MCP configuration.
 An **MCP-only integration** connects the MCP server without TopicGate's skills.
@@ -54,7 +56,10 @@ Install the application first; installing a plugin does not install TopicGate or
 
 The host normally starts the MCP server. Restart it and start a new agent session
 after changing MCP configuration. **Help → MCP setup...** in TopicGate Desktop
-provides the resolved executable, data directory, and a configuration to copy.
+provides the resolved executable, data directory, configuration to copy, and local
+preflight checks. Closing that dialog or passing its local checks does not verify
+that the agent host loaded TopicGate. Confirm the integration from a new agent
+session by checking that the expected TopicGate tools are available.
 
 ## Observation semantics
 

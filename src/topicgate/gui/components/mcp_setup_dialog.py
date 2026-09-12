@@ -137,6 +137,16 @@ class McpSetupDialog(QDialog):
         self._diagnostic_result.setAccessibleName("MCP preflight results")
         layout.addWidget(self._diagnostic_result)
 
+        verification = QLabel(
+            "Local checks do not verify that an agent host loaded TopicGate. "
+            "After updating the host configuration, restart the host, open a new "
+            "agent session, and confirm that the expected TopicGate tools are available."
+        )
+        verification.setObjectName("mcpHostVerificationNotice")
+        verification.setWordWrap(True)
+        verification.setAccessibleName("Agent host verification guidance")
+        layout.addWidget(verification)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.button(QDialogButtonBox.StandardButton.Close).setIcon(icon(IconName.CLOSE))
         buttons.rejected.connect(self.accept)

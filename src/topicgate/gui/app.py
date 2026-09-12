@@ -74,7 +74,7 @@ def create_startup_pixmap(logo: QPixmap) -> QPixmap:
     painter.drawText(
         QRectF(28, 119, 504, 20),
         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        "SECURE LOCAL MQTT ACCESS",
+        "LOCAL MQTT WORKSPACE",
     )
 
     painter.setPen(QColor("#202124"))

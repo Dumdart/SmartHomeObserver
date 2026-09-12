@@ -31,7 +31,7 @@ class AboutDialog(QDialog):
         title.setStyleSheet("font-size: 24px; font-weight: 700;")
         layout.addWidget(title)
 
-        subtitle = QLabel("Secure local access to your MQTT topics")
+        subtitle = QLabel("Local MQTT observation with optional agent access")
         subtitle.setObjectName("aboutSubtitle")
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("font-size: 14px;")
@@ -64,8 +64,12 @@ class AboutDialog(QDialog):
         storage_title.setStyleSheet("font-weight: 700;")
         storage_text = QLabel(
             "Broker profiles, subscriptions, and each broker's latest "
-            "observed MQTT values are stored in SQLite. "
+            "observed MQTT values are stored locally in SQLite. "
             "Passwords are stored in your operating system's credential store. "
+            "When you connect an agent through MCP, requested broker metadata and "
+            "observed values are returned to the agent host and may be included in "
+            "its model context under the host and model provider's data policies. "
+            "Passwords are never exposed through MCP. "
             "Snapshot views may include stored observations captured before "
             "the current connection or observation window."
         )

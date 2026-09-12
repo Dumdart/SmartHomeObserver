@@ -56,13 +56,15 @@ Do not run the desktop with `sudo` or through SSH. PySide6 and the Secret Servic
 2. Select the profile, connect, and use **Add subscription** with a bounded filter such as `home/+/temperature`.
 3. Check that observed values arrive. Non-retained messages appear only while TopicGate is listening.
 
-Broker passwords stay in the local operating-system credential store; they are not passed through MCP. Desktop users can stop here: no agent configuration is required.
+Broker passwords stay in the local operating-system credential store; they are not passed through MCP. Desktop users can stop here: agent access and MCP configuration are optional.
+
+TopicGate stores configuration and observed MQTT state locally, but an MCP request returns selected broker metadata, topic names, and observed values to the connected agent host. That data may be included in model context under the host and model provider's data policies. Review those policies before connecting an agent to a broker containing sensitive data.
 
 For AI access, follow [Codex](CODEX.md), [Claude Code](CLAUDE_CODE.md), [Cursor](CURSOR.md), or [VS Code / Copilot](VSCODE_COPILOT.md). Install the agent host on the same machine and under the same OS user as TopicGate for the normal local workflow. Remote/container hosts need their own executable and access to the intended local data; a workstation path will not work there.
 
 The host guides describe the current repository CLI. If your installed release does not recognize an integration command or host name, use the guide's manual plugin or MCP-only alternative. Check available hosts with `topicgate-cli integration install --help`.
 
-**Help → MCP setup...** provides the executable, shared data directory, copyable configuration, and local preflight checks. Selecting Control there only changes the configuration preview; it does not reconfigure a running agent.
+**Help → MCP setup...** provides the executable, shared data directory, copyable configuration, and local preflight checks. Selecting Control there only changes the configuration preview; it does not reconfigure a running agent. Closing the dialog or passing its local checks does not verify that an agent host loaded TopicGate. Restart the host, open a new agent session, and confirm that the expected TopicGate tools are available.
 
 | Command | Purpose |
 | --- | --- |

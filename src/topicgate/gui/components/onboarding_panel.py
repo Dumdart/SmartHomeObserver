@@ -47,7 +47,7 @@ class OnboardingPanel(QFrame):
             ("connection", "Test the broker connection", "Connect", self.test_connection_requested),
             ("subscription", "Add a subscription filter", "Add filter", self.add_subscription_requested),
             ("observe", "Observe values with a fresh snapshot", "Observe", self.observe_requested),
-            ("mcp", "Configure the MCP integration", "MCP setup", self.configure_mcp_requested),
+            ("mcp", "Connect an AI agent with MCP", "MCP setup", self.configure_mcp_requested),
         ):
             row = QHBoxLayout()
             label = QLabel()
@@ -55,6 +55,7 @@ class OnboardingPanel(QFrame):
             label.setTextFormat(Qt.TextFormat.PlainText)
             label.setStyleSheet("color: #172554;")
             label.setProperty("checklistText", text)
+            label.setProperty("optional", key == "mcp")
             row.addWidget(label, 1)
             button = QPushButton(button_text)
             button.setObjectName(f"firstRun{key.title()}Button")
@@ -70,8 +71,14 @@ class OnboardingPanel(QFrame):
         for key, label in self._rows.items():
             done = completed.get(key, False)
             text = str(label.property("checklistText"))
-            label.setText(("Done: " if done else "Next: ") + text)
+            prefix = "Done: " if done else "Next: "
+            if not done and label.property("optional"):
+                prefix = "Optional: "
+            label.setText(prefix + text)
             # Check the visible text is mirrored in accessibility state.
             label.setAccessibleName(label.text())
             self._buttons[key].setEnabled(not done and not busy)
-        self.setVisible(not all(completed.values()))
+        required_keys = (
+            key for key, label in self._rows.items() if not label.property("optional")
+        )
+        self.setVisible(not all(completed.get(key, False) for key in required_keys))

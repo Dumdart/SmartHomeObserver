@@ -634,7 +634,6 @@ class MainWindow(QMainWindow):
         dialog.reconnect_observe_requested.connect(
             self._confirm_reconnect_and_observe
         )
-        dialog.finished.connect(self._mark_mcp_configured)
         dialog.destroyed.connect(
             lambda: setattr(self, "_mcp_setup_dialog", None)
         )
@@ -699,10 +698,6 @@ class MainWindow(QMainWindow):
             f"Saved to:\n{result.destination}\n\n{details}\n\n"
             "Review the archive before sharing it.",
         )
-
-    def _mark_mcp_configured(self, _result: int) -> None:
-        self._settings.setValue("onboarding/mcpConfigured", True)
-        self._render_onboarding()
 
     def _dismiss_onboarding(self) -> None:
         self._settings.setValue("onboarding/dismissed", True)
@@ -867,9 +862,6 @@ class MainWindow(QMainWindow):
                 ) or self._view_model.connection_status == "connected",
                 "subscription": bool(self._view_model.subscriptions),
                 "observe": bool(snapshot.topics),
-                "mcp": self._settings.value(
-                    "onboarding/mcpConfigured", False, type=bool
-                ),
             },
             busy=(
                 self._view_model.is_busy("broker")

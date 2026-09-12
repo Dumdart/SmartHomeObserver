@@ -590,10 +590,13 @@ def test_about_dialog_describes_persisted_observations() -> None:
 
     assert text == (
         "Broker profiles, subscriptions, and each broker's latest observed "
-        "MQTT values are stored in SQLite. Passwords are stored in your "
-        "operating system's credential store. Snapshot views may include "
-        "stored observations captured before the current connection or "
-        "observation window."
+        "MQTT values are stored locally in SQLite. Passwords are stored in your "
+        "operating system's credential store. When you connect an agent through "
+        "MCP, requested broker metadata and observed values are returned to the "
+        "agent host and may be included in its model context under the host and "
+        "model provider's data policies. Passwords are never exposed through MCP. "
+        "Snapshot views may include stored observations captured before the current "
+        "connection or observation window."
     )
     dialog.deleteLater()
     application.processEvents()
@@ -890,6 +893,19 @@ def test_desktop_onboarding_and_mcp_setup_guide_the_first_run() -> None:
     mcp_action = window.findChild(QAction, "mcpSetupAction")
     assert checklist is not None
     assert broker.text() == "Next: Configure a broker profile"
+    assert window.findChild(QLabel, "firstRunMcpStatus").text() == (
+        "Optional: Connect an AI agent with MCP"
+    )
+    window._onboarding.render(
+        {
+            "broker": True,
+            "connection": True,
+            "subscription": True,
+            "observe": True,
+        }
+    )
+    assert checklist.isHidden()
+    window._render_onboarding()
     assert mcp_action.shortcut().toString() == "Ctrl+Shift+M"
 
     mcp_action.trigger()
@@ -913,8 +929,11 @@ def test_desktop_onboarding_and_mcp_setup_guide_the_first_run() -> None:
     assert "PASS: Broker snapshot" in dialog.findChild(
         QLabel, "mcpPreflightResults"
     ).text()
+    assert "do not verify" in dialog.findChild(
+        QLabel, "mcpHostVerificationNotice"
+    ).text()
     dialog.accept()
-    assert settings.value("onboarding/mcpConfigured", False, type=bool)
+    assert not settings.contains("onboarding/mcpConfigured")
     window.close()
     application.processEvents()
 
