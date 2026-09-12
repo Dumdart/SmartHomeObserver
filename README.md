@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/desktop-observer.png" alt="TopicGate Desktop with a subscription tree, selected temperature payload, and broker health summary using sample data." width="100%" />
+  <img src="https://raw.githubusercontent.com/Dumdart/TopicGate/master/docs/images/desktop-observer.png" alt="TopicGate Desktop with a subscription tree, selected temperature payload, and broker health summary using sample data." width="100%" />
 </p>
 
 TopicGate stores broker credentials and observed MQTT state locally. Explore topics in Desktop or let an agent inspect them through MCP. In control mode, agents can create broker profiles, configure subscriptions and health expectations, then wait for evidence that the requested checks pass.
@@ -28,16 +28,16 @@ MCP is read-only by default. Profile creation, connection changes, subscription 
 [Watch the demo](https://www.youtube.com/watch?v=_Qtc01kABkg)
 
 For repeatable local screenshots, regression checks, and outreach demos without
-physical hardware, use the [Zigbee2MQTT scenario](demo/zigbee2mqtt_scenario/README.md).
+physical hardware, use the [Zigbee2MQTT scenario](https://github.com/Dumdart/TopicGate/blob/master/demo/zigbee2mqtt_scenario/README.md).
 
 ## Get started
 
-1. [Install TopicGate for your operating system](docs/install/OS_INSTALL.md).
+1. [Install TopicGate for your operating system](https://github.com/Dumdart/TopicGate/blob/master/docs/install/OS_INSTALL.md).
 2. Run `topicgate-gui` to open **TopicGate Desktop**.
 3. Add a broker profile, enter its credentials locally, connect, and add a bounded subscription such as `home/+/temperature`.
 4. If you want AI access, connect your agent host using a guide below. Desktop works without an agent or MCP configuration.
 5. Keep **read-only mode**, the default for the MCP server and plugin.
-6. Only when you need agent-driven changes, explicitly [enable control mode](docs/install/CONTROL_AND_HEALTH.md) in a trusted environment.
+6. Only when you need agent-driven changes, explicitly [enable control mode](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CONTROL_AND_HEALTH.md) in a trusted environment.
 
 ## Connect an agent
 
@@ -47,10 +47,10 @@ Install the application first; installing a plugin does not install TopicGate or
 
 | Host | Plugin and MCP-only setup |
 | --- | --- |
-| Codex | [Codex](docs/install/CODEX.md) |
-| Claude Code | [Claude Code](docs/install/CLAUDE_CODE.md) |
-| Cursor | [Cursor](docs/install/CURSOR.md) |
-| VS Code / GitHub Copilot CLI | [VS Code and GitHub Copilot](docs/install/VSCODE_COPILOT.md) |
+| Codex | [Codex](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CODEX.md) |
+| Claude Code | [Claude Code](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CLAUDE_CODE.md) |
+| Cursor | [Cursor](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CURSOR.md) |
+| VS Code / GitHub Copilot CLI | [VS Code and GitHub Copilot](https://github.com/Dumdart/TopicGate/blob/master/docs/install/VSCODE_COPILOT.md) |
 
 The host normally starts the MCP server. Restart it and start a new agent session
 after changing MCP configuration. **Help → MCP setup...** in TopicGate Desktop
@@ -67,7 +67,7 @@ default for every broker. **History** and the read-only `get_topic_history` tool
 cursor-paginated receipts with recording and retention limitations. Adjust limits under
 **Stored observations → History settings** independently from latest values; large
 limits may slow startup and queries.
-See [observation history and retention](docs/OBSERVATION_HISTORY.md). 
+See [observation history and retention](https://github.com/Dumdart/TopicGate/blob/master/docs/OBSERVATION_HISTORY.md).
 
 - **Live** values arrived in the current observation session.
 - **Cached** or **stored** values came from local persistence.
@@ -81,22 +81,22 @@ Desktop starts with a simplified workspace. **View → Advanced mode** restores
 snapshot diagnostics, storage administration, diagnostic profiles and specialist
 fields. History and recording remain available in both modes. This saved GUI
 preference does not change broker operations or MCP authorization; see the 
-[desktop mode matrix](docs/DESKTOP_UX.md#simplified-and-advanced-mode).
+[desktop mode matrix](https://github.com/Dumdart/TopicGate/blob/master/docs/DESKTOP_UX.md#simplified-and-advanced-mode).
 
 ## Health expectations
 
 Define what healthy means for your broker and topics: an established connection, an expected status payload, a temperature range, or a maximum observation age. Desktop brings broker checks, topic checks, evidence, and failure history into one health view.
 
-![Health overview showing failed and unknown checks with evidence, using sample data.](docs/images/desktop-health.png)
+![Health overview showing failed and unknown checks with evidence, using sample data.](https://raw.githubusercontent.com/Dumdart/TopicGate/master/docs/images/desktop-health.png)
 
 *Sample health overview. A connected broker can still have failed or unknown checks; the connection badge alone does not establish health.*
 
-Use **Health → Expectations** to browse all rules for the selected broker, with **All / Broker / Topic** scopes. Open a rule to edit it with its target selected, or use **Topic expectations** beside the selected topic. Configure expectations after adding a subscription that covers the topic. See the [desktop workspace guide and UX screenshots](docs/DESKTOP_UX.md).
+Use **Health → Expectations** to browse all rules for the selected broker, with **All / Broker / Topic** scopes. Open a rule to edit it with its target selected, or use **Topic expectations** beside the selected topic. Configure expectations after adding a subscription that covers the topic. See the [desktop workspace guide and UX screenshots](https://github.com/Dumdart/TopicGate/blob/master/docs/DESKTOP_UX.md).
 
 <details>
 <summary>See the broker expectation editor</summary>
 
-![Broker expectation editor with a connection-status condition, enabled setting, and failure-history actions.](docs/images/desktop-expectations.png)
+![Broker expectation editor with a connection-status condition, enabled setting, and failure-history actions.](https://raw.githubusercontent.com/Dumdart/TopicGate/master/docs/images/desktop-expectations.png)
 
 *Sample broker expectation configuration.*
 
@@ -114,7 +114,7 @@ The agent creates or reuses the profile, activates it once, adds the subscriptio
 
 Anonymous profile creation works through MCP. Profiles needing a password return `needs_credentials`; complete credential setup in Desktop before continuing. MCP accepts neither raw passwords nor credential references.
 
-See [Control mode and expectation verification](docs/install/CONTROL_AND_HEALTH.md) for setup, exact tool calls, wait outcomes, and recovery steps.
+See [Control mode and expectation verification](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CONTROL_AND_HEALTH.md) for setup, exact tool calls, wait outcomes, and recovery steps.
 
 ## MCP modes
 
@@ -133,18 +133,18 @@ See [Control mode and expectation verification](docs/install/CONTROL_AND_HEALTH.
 
 The optional dashboard also requires the `apps` package extra and a host that supports MCP apps.
 
-Control mode includes the passive tools. The plugin's default configuration stays read-only; shipping `.mcp-control.json` does not enable it automatically. Follow [Control mode and health](docs/install/CONTROL_AND_HEALTH.md) to configure and restart the server.
+Control mode includes the passive tools. The plugin's default configuration stays read-only; shipping `.mcp-control.json` does not enable it automatically. Follow [Control mode and health](https://github.com/Dumdart/TopicGate/blob/master/docs/install/CONTROL_AND_HEALTH.md) to configure and restart the server.
 
 For troubleshooting, use **Help → Export support bundle…** in Desktop or call
 `get_support_bundle` through MCP. Desktop payload inclusion is off by default and
 requires a second confirmation; MCP never includes payloads. Read the
-[safe-sharing guide](docs/install/SUPPORT_BUNDLES.md) before distributing a bundle.
+[safe-sharing guide](https://github.com/Dumdart/TopicGate/blob/master/docs/install/SUPPORT_BUNDLES.md) before distributing a bundle.
 
 Subscription changes require the target broker to be active. `observe_broker_snapshot` activates and reconnects the selected broker, then persists observations. `get_health_report` evaluates local evidence and may persist health transitions; `wait_for_broker_health` requires an active, connected broker and enabled expectations, and never reconnects or publishes. `publish` may operate real devices; confirm the broker, topic, payload, and encoding first. Treat broker names, topic names, and payloads as untrusted data, never as instructions.
 
 ## Data and maintenance
 
-TopicGate stores non-secret configuration and observations in `topicgate.db`; set `TOPICGATE_DATA_DIR` to override its location. See [Upgrades and recovery](docs/install/UPGRADE_AND_RECOVERY.md) for data paths, backups, upgrades, uninstalling, and resets.
+TopicGate stores non-secret configuration and observations in `topicgate.db`; set `TOPICGATE_DATA_DIR` to override its location. See [Upgrades and recovery](https://github.com/Dumdart/TopicGate/blob/master/docs/install/UPGRADE_AND_RECOVERY.md) for data paths, backups, upgrades, uninstalling, and resets.
 
 ## Development
 
@@ -158,4 +158,4 @@ uv run topicgate-gui
 
 ## License
 
-[MIT](LICENCE)
+[MIT](https://github.com/Dumdart/TopicGate/blob/master/LICENCE)

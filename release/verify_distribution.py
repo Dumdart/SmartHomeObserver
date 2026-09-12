@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 _RUNTIME_PROBE = """
+from importlib.metadata import distribution
 from pathlib import Path
 
 from alembic.script import ScriptDirectory
@@ -17,6 +18,24 @@ from topicgate.infrastructure.database.migrations import (
     _alembic_config,
     upgrade_database,
 )
+
+expected_entry_points = {
+    ("console_scripts", "topicgate"): "topicgate.mcp.server:run",
+    ("console_scripts", "topicgate-cli"): "topicgate.cli.topicgate_cli:main",
+    ("gui_scripts", "topicgate-gui"): "topicgate.gui.app:run",
+}
+installed_entry_points = {
+    (entry.group, entry.name): entry
+    for entry in distribution("topicgate").entry_points
+    if (entry.group, entry.name) in expected_entry_points
+}
+assert set(installed_entry_points) == set(expected_entry_points), (
+    installed_entry_points
+)
+for key, expected_value in expected_entry_points.items():
+    entry = installed_entry_points[key]
+    assert entry.value == expected_value, entry
+    assert callable(entry.load()), entry
 
 package_dir = Path(topicgate.__file__).resolve().parent
 config = _alembic_config(None)
@@ -89,6 +108,15 @@ def verify_distribution(wheel_path: Path) -> None:
             env=environment,
             check=True,
         )
+        subprocess.run(
+            [str(_environment_script(environment_dir, "topicgate-cli")), "--help"],
+            cwd=runtime_dir,
+            env=environment,
+            check=True,
+        )
+        gui_script = _environment_script(environment_dir, "topicgate-gui")
+        if not gui_script.is_file():
+            raise RuntimeError(f"Missing installed entry point: {gui_script}")
 
 
 def _environment_python(environment_dir: Path) -> Path:

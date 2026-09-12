@@ -43,7 +43,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/Dumdart/TopicGate"
-Documentation = "https://github.com/Dumdart/TopicGate/tree/main/docs"
+Documentation = "https://github.com/Dumdart/TopicGate/tree/master/docs"
 "Issue Tracker" = "https://github.com/Dumdart/TopicGate/issues"
 Changelog = "https://github.com/Dumdart/TopicGate/releases"
 
