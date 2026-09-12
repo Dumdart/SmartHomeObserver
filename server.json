@@ -3,12 +3,12 @@
     "name": "io.github.Dumdart/topicgate",
     "title": "TopicGate",
     "description": "Secure local access to MQTT topics through MCP.",
-    "version": "1.5.3",
+    "version": "1.5.4",
     "packages": [
       {
         "registryType": "pypi",
         "identifier": "topicgate",
-        "version": "1.5.3",
+        "version": "1.5.4",
         "transport": {
           "type": "stdio"
         }
