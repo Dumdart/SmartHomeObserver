@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Dumdart/TopicGate/master/docs/images/desktop-observer.png" alt="TopicGate Desktop with a subscription tree, selected temperature payload, and broker health summary using sample data." width="100%" />
+  <img src="https://raw.githubusercontent.com/Dumdart/TopicGate/master/docs/images/demo-observation.png" alt="TopicGate Desktop showing a live retained Zigbee2MQTT availability topic whose JSON payload reports the device offline." width="100%" />
 </p>
 
 TopicGate stores broker credentials and observed MQTT state locally. Explore topics in Desktop or let an agent inspect them through MCP. In control mode, agents can create broker profiles, configure subscriptions and health expectations, then wait for evidence that the requested checks pass.
@@ -27,10 +27,12 @@ Local storage does not mean agent-visible data stays only inside TopicGate. Topi
 - Password storage through the operating-system credential store; passwords are never exposed through MCP.
 - Redacted, bounded support bundles through Desktop ZIP export or passive MCP JSON/Markdown access.
 
-[Watch the demo](https://www.youtube.com/watch?v=_Qtc01kABkg)
+[Follow the release-matched diagnosis](https://github.com/Dumdart/TopicGate/blob/master/docs/DEMO.md):
+observation → expectation failure → explanation → recovery, including a read-only
+agent example. To reproduce the sample data without physical hardware, use the
+[Zigbee2MQTT scenario](https://github.com/Dumdart/TopicGate/blob/master/demo/zigbee2mqtt_scenario/README.md).
 
-For repeatable local screenshots, regression checks, and outreach demos without
-physical hardware, use the [Zigbee2MQTT scenario](https://github.com/Dumdart/TopicGate/blob/master/demo/zigbee2mqtt_scenario/README.md).
+[Watch the earlier video demo](https://www.youtube.com/watch?v=_Qtc01kABkg).
 
 ## Get started
 

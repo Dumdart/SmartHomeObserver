@@ -4,6 +4,11 @@ This hardware-free demo starts a disposable local Mosquitto broker and guides
 you through a deterministic Zigbee2MQTT-shaped scenario in TopicGate. It needs
 neither Zigbee hardware nor Home Assistant.
 
+For the concise public journey built from this data, see the
+[release-matched diagnosis](https://github.com/Dumdart/TopicGate/blob/master/docs/DEMO.md):
+observation → expectation failure → explanation → recovery, followed by a
+read-only agent example.
+
 ## Prerequisites
 
 - Docker with Docker Compose

@@ -30,5 +30,6 @@ def test_readme_resources_are_absolute_for_pypi() -> None:
     ]
 
     assert relative_targets == []
-    assert f"{RAW_REPOSITORY_URL}/docs/images/desktop-observer.png" in readme
+    assert f"{RAW_REPOSITORY_URL}/docs/images/demo-observation.png" in readme
     assert f"{REPOSITORY_URL}/blob/master/docs/install/OS_INSTALL.md" in readme
+    assert f"{REPOSITORY_URL}/blob/master/docs/DEMO.md" in readme
